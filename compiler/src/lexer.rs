@@ -1,7 +1,5 @@
-use crate::{
-    diagnostic::Diagnostic,
-    types::{self, NumWord},
-};
+
+use crate::{diagnostic::Diagnostic, types::NumWord};
 
 const AVERAGE_WORD_LEN: usize = 4;
 
@@ -11,7 +9,7 @@ pub struct Token<'a> {
     kind: TokenKind,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenKind {
     // Keywords
     Fn,
@@ -23,6 +21,7 @@ pub enum TokenKind {
 
     Ident,
     String, // "..."
+    Number(u64),
 
     // Operators
     Plus,      // +
@@ -78,12 +77,14 @@ pub enum TokenKind {
     Unknown,
 }
 
-type LexerOutput<'a> = Vec<Token<'a>>;
+pub type LexerOutput<'a> = Vec<Token<'a>>;
 
 pub fn lex<'a>(source_code: &'a str, diag: &mut Diagnostic) -> Result<LexerOutput<'a>, ()> {
-    let mut lexer_splitter = LexerSplitter::new(source_code, diag);
+    // Split the string into separate words, storing line and column of each
+    let lexer_splitter = LexerSplitter::new(source_code, diag);
     let spltted = lexer_splitter.run()?;
 
+    // Tokenize separate words
     let mut result = Vec::with_capacity(spltted.len());
     for num_word in spltted {
         #[rustfmt::skip]
@@ -135,11 +136,20 @@ pub fn lex<'a>(source_code: &'a str, diag: &mut Diagnostic) -> Result<LexerOutpu
             ":"       => TokenKind::Colon,
             ","       => TokenKind::Comma,
             "."       => TokenKind::Dot,
+            // String literal: enclosed in quotes "..."
             _ if num_word.word.starts_with('"') => TokenKind::String,
+            // Identifier: alphanumeric characters or '_', must not start with digit
             _ if word_is_ident(num_word.word)   => TokenKind::Ident,
             _ => {
-                if let Some(number) = word_is_number(num_word.word) {
-                    todo!()
+                // Numeric literal: digits or '_' (sugar for view separation)
+                if let Some(parse_result) = word_is_number(num_word.word) {
+                    match parse_result {
+                        Ok(number) => TokenKind::Number(number),
+                        Err(message) => {
+                            diag.error(message, num_word.line, num_word.col);
+                            TokenKind::Unknown
+                        }
+                    }
                 } else {
                     diag.error(
                         format!("unexpected token '{}'", num_word.word),
@@ -162,20 +172,55 @@ pub fn lex<'a>(source_code: &'a str, diag: &mut Diagnostic) -> Result<LexerOutpu
 
 fn word_is_ident(word: &str) -> bool {
     let mut iter = word.chars();
-    // First chars always exists
+
+    // First char is always exist
     if iter.next().unwrap().is_numeric() {
         return false;
     }
+
     for c in iter {
-        if !c.is_alphanumeric() || c != '_' {
+        if !(c.is_alphanumeric() || c == '_') {
             return false;
         }
     }
+
     true
 }
 
-fn word_is_number(word: &str) -> Option<()> {
-    todo!()
+fn word_is_number(word: &str) -> Option<Result<u64, &'static str>> {
+    // Get base of the number
+    let (radix, word) = if let Some(n) = word.strip_prefix("0b") {
+        (2u32, n)
+    } else if let Some(n) = word.strip_prefix("0o") {
+        (8u32, n)
+    } else if let Some(n) = word.strip_prefix("0x") {
+        (16u32, n)
+    } else if word.starts_with(|c: char| c.is_ascii_digit()) {
+        (10u32, word)
+    } else {
+        return None;
+    };
+
+    // Remove '_' from the string. '1_000_000' -> '1000000'
+    let clean_word = word.chars().filter(|&c| c != '_').collect::<String>();
+
+    if clean_word.is_empty() {
+        // Unreacheble for decimal
+        return Some(Err("missing digits after the integer base prefix"));
+    }
+
+    // Check all chars is digits or '_'
+    if !clean_word.chars().all(|c| c.is_digit(radix)) {
+        return Some(Err("invalid digits"));
+    }
+
+    match u64::from_str_radix(&clean_word, radix) {
+        Ok(n) => Some(Ok(n)),
+        Err(e) => match e.kind() {
+            std::num::IntErrorKind::PosOverflow => Some(Err("numerical literal is too large")),
+            _ => unreachable!("Unexpected error when parsing a number. IT IS A BUG!!!"),
+        },
+    }
 }
 
 struct WordStart {
@@ -228,9 +273,10 @@ impl<'a, 'b> LexerSplitter<'a, 'b> {
 
     fn run(mut self) -> Result<Vec<NumWord<'a>>, ()> {
         while let Some((cur_idx, cur_ch)) = self.iter.next() {
-            let cur_ch_is_alphanum = cur_ch.is_alphanumeric();
+            // Load current char and next char
+            let cur_ch_is_alphanum = cur_ch.is_alphanumeric() || cur_ch == '_';
             let (peek_idx, peek_ch, peek_ch_is_alphanum) = match self.iter.peek() {
-                Some(&p) => (p.0, p.1, p.1.is_alphanumeric()),
+                Some(&p) => (p.0, p.1, p.1.is_alphanumeric() || p.1 == '_'),
                 None => (self.src.len(), '\0', !cur_ch_is_alphanum),
             };
 
@@ -246,6 +292,8 @@ impl<'a, 'b> LexerSplitter<'a, 'b> {
             self.cur_column += 1;
         }
 
+        // If source code is readed, but State Machine stay in 'InString' state
+        // 'let a: &u32 = "Unclsed string'
         if self.state == LexerSplitterState::InString {
             self.diag.fatal(
                 "unclosed string",
@@ -258,6 +306,7 @@ impl<'a, 'b> LexerSplitter<'a, 'b> {
         Ok(self.result)
     }
 
+    // State machis iteration
     fn process(
         &mut self,
         cur_idx: usize,
@@ -310,7 +359,7 @@ impl<'a, 'b> LexerSplitter<'a, 'b> {
                     self.word_start_column = self.cur_column;
                     self.push_word(peek_idx);
                     Some(WordStart::new(peek_idx, self.cur_line, self.cur_column + 1))
-                //
+                // Separate words by type. "a==b+c" -> ["a", "==", "b", "+", "c"]
                 } else if cur_ch_is_alphanum != peek_ch_is_alphanum {
                     self.push_word(peek_idx);
                     Some(WordStart::new(peek_idx, self.cur_line, self.cur_column + 1))
@@ -327,26 +376,37 @@ impl<'a, 'b> LexerSplitter<'a, 'b> {
         }
     }
 
+    // Push word to the result with a custom ending index
     fn push_word(&mut self, word_end_idx: usize) {
+        // Mess word with whitespaces on the sides
+        // '\t\t    let    '
         let mess_word = &self.src[self.word_start_idx..word_end_idx];
+        // Mess word with whitespaces in the end
+        // 'let    '
         let end_mess_word = mess_word.trim_start();
 
         if !end_mess_word.is_empty() {
             let num_word = NumWord::new(
                 end_mess_word.trim_end(),
                 self.word_start_line,
+                // Shift column on amount of the mess in the start
                 self.word_start_column + mess_word.len() - end_mess_word.len(),
             );
             self.result.push(num_word);
         }
     }
 
+    // If current char is the end of line - feed line and return position of new word
     fn try_feed_line(&mut self, cur_ch: char, peek_ch: char) -> Option<WordStart> {
+        // LF or CR
         if cur_ch == '\n' || cur_ch == '\r' {
+            // CRLF
             if cur_ch == '\r' && peek_ch == '\n' {
+                // Skip LF
                 self.iter.next();
             }
 
+            // Feed line
             self.cur_line += 1;
             self.cur_column = 0;
             Some(WordStart::new(
@@ -354,6 +414,7 @@ impl<'a, 'b> LexerSplitter<'a, 'b> {
                 self.cur_line,
                 self.cur_column,
             ))
+        // Is not the end of line
         } else {
             None
         }
@@ -377,13 +438,23 @@ mod tests {
 
     #[test]
     fn simple_test_1() {
-        let (result, diag) = call_lexer(r#" let a: 32 = 10 * 5 - 10; "#);
+        let (result, diag) = call_lexer(r#" let a_b: 32 = 10 * 5 - 10; "#);
 
         assert!(diag.is_clear());
         assert_eq!(
             token_kinds(result.unwrap()),
             vec![
-                Let, Ident, Colon, Ident, Set, Ident, Star, Ident, Minus, Ident, Semicolon
+                Let,
+                Ident,
+                Colon,
+                Number(32),
+                Set,
+                Number(10),
+                Star,
+                Number(5),
+                Minus,
+                Number(10),
+                Semicolon
             ]
         );
     }
@@ -413,6 +484,67 @@ mod tests {
     }
 
     #[test]
+    fn number_literals() {
+        let (result, diag) = call_lexer(
+            r#"
+                10000
+                1_000_000__
+                0b101101
+                0o____342_63
+                0xffaEEb
+            "#,
+        );
+
+        assert!(diag.is_clear());
+        assert_eq!(
+            token_kinds(result.unwrap()),
+            vec![
+                Number(10000),
+                Number(1_000_000),
+                Number(0b101101),
+                Number(0o34263),
+                Number(0xFFAEEB)
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_number_literals() {
+        let (result, diag) = call_lexer(
+            r#"
+                0b
+                0b_
+                0b___
+                0o
+                0o_
+                0o___
+                0x
+                0x_
+                0x___
+            "#,
+        );
+
+        assert!(diag.has_error());
+        assert_eq!(diag.items.len(), 9);
+        assert_eq!(token_kinds(result.unwrap()), vec![Unknown; 9]);
+    }
+
+    #[test]
+    fn number_literals_invalid_digits() {
+        let (result, diag) = call_lexer(
+            r#"
+                0b1121
+                0o55758
+                0xABCDEFG
+            "#,
+        );
+
+        assert!(diag.has_error());
+        assert_eq!(diag.items.len(), 3);
+        assert_eq!(token_kinds(result.unwrap()), vec![Unknown; 3]);
+    }
+
+    #[test]
     fn unfmt() {
         let (result1, diag1) = call_lexer(
             r#"
@@ -432,6 +564,7 @@ mod tests {
                 Тофик";if n<2{return 1;}return fib(n-2)+fib(n-1);}"#,
         );
 
+        assert_eq!(diag1.items, vec![]);
         assert!(diag1.is_clear());
         assert!(diag2.is_clear());
         assert_eq!(token_kinds(result1.unwrap()), token_kinds(result2.unwrap()));

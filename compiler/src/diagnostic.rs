@@ -1,13 +1,11 @@
-use std::fmt::Display;
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Severity {
     Fatal,
     Error,
     Warning,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct DiagnosticInfo {
     pub severity: Severity,
     pub message: String,
