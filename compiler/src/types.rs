@@ -1,6 +1,6 @@
 //#[cfg_attr(debug_assertions, derive(Debug))]
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NumWord<'a> {
     pub word: &'a str,
     pub line: usize,

@@ -1,12 +1,11 @@
-
 use crate::{diagnostic::Diagnostic, types::NumWord};
 
 const AVERAGE_WORD_LEN: usize = 4;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Token<'a> {
-    word: NumWord<'a>,
-    kind: TokenKind,
+    pub word: NumWord<'a>,
+    pub kind: TokenKind,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
