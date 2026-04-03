@@ -13,7 +13,7 @@ enum ASTNode<'a> {
     Let {
         name: NumWord<'a>,
         var_type: NumWord<'a>,
-        block: Box<ASTNode<'a>>,
+        expr: Box<ASTNode<'a>>,
     },
 
     If {
@@ -133,6 +133,14 @@ fn parse_expression<'a>(
     mut cursor: LexerOutputCursor<'a>,
     terminator: TokenKind,
 ) -> SubParserOutput<'a> {
+    enum ExprParserExpected {
+        Operator,
+        Operand,
+    }
+    use ExprParserExpected::*;
+
+    let mut state = Operand;
+
     while let Some(token) = cursor.next() {
         let s = match token.kind {
             TokenKind::LBrace => parse_block(cursor),
@@ -167,17 +175,6 @@ fn parse_function_decl<'a>(mut cursor: LexerOutputCursor<'a>) -> SubParserOutput
 
     let (block, cursor) = parse_block(cursor)?;
 
-    fn add(a: i32, b: i32) -> i32 {
-        a + b
-    }
-
-    let a = add(2, {
-        fn m() -> i32 {
-            add(10, 5)
-        }
-        add(10, m())
-    });
-
     Ok((
         ASTNode::FnDecl {
             name,
@@ -198,7 +195,7 @@ fn parse_let_decl<'a>(mut cursor: LexerOutputCursor<'a>) -> SubParserOutput<'a> 
         cursor is Set    or PlusSet   or MinusSet  or StarSet   or SlashSet  or
                   ModSet or BitInvSet or LShiftSet or RShiftSet or BitAndSet or BitOrSet
     );
-    let (block, new_cursor) = parse_block(cursor)?;
+    let (expr, new_cursor) = parse_expression(cursor, TokenKind::Semicolon)?;
     cursor = new_cursor;
     match_token!(cursor is Semicolon);
     todo!();
@@ -207,7 +204,7 @@ fn parse_let_decl<'a>(mut cursor: LexerOutputCursor<'a>) -> SubParserOutput<'a> 
         ASTNode::Let {
             name,
             var_type,
-            block: Box::new(block),
+            expr: Box::new(expr),
         },
         cursor,
     ))
