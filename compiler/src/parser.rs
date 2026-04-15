@@ -1,8 +1,22 @@
-use crate::error::ParserError;
+use crate::{diagnostic::Diagnostic, error::*, lexer::*, token::tk::*, token::*, types::NumWord};
 
-use crate::{diagnostic::Diagnostic, lexer::*, types::NumWord};
+use TokenKind::General as Gn;
+use TokenKind::Operator as Op;
+use TokenKind::Setter as St;
+use TokenKind::Unknown;
 
-enum ASTNode<'a> {
+struct ASTNode<'a> {
+    token: Token<'a>,
+    kind: ASTNodeKind<'a>,
+}
+
+impl<'a> ASTNode<'a> {
+    fn new(token: Token<'a>, kind: ASTNodeKind<'a>) -> Self {
+        Self { token, kind }
+    }
+}
+
+enum ASTNodeKind<'a> {
     FnDecl {
         name: NumWord<'a>,
         args: Vec<Field<'a>>,
@@ -10,10 +24,10 @@ enum ASTNode<'a> {
         block: Box<ASTNode<'a>>,
     },
 
-    Let {
+    LetDecl {
         name: NumWord<'a>,
         var_type: NumWord<'a>,
-        block: Box<ASTNode<'a>>,
+        expr: Box<ASTNode<'a>>,
     },
 
     If {
@@ -38,6 +52,60 @@ enum ASTNode<'a> {
         name: NumWord<'a>,
         args: Vec<ASTNode<'a>>,
     },
+
+    // VarUse {
+    //     name: NumWord<'a>,
+    // },
+
+    // VarSet {
+    //     name: NumWord<'a>,
+    //     expr: Box<ASTNode<'a>>,
+    // },
+    String {
+        string: NumWord<'a>,
+    },
+
+    Number {},
+
+    Let {},
+
+    UnaryOperator {
+        op: UnaryOperator,
+        operand: Box<ASTNode<'a>>,
+    },
+
+    BinaryOperator {
+        op: BinaryOperator,
+        left: Box<ASTNode<'a>>,
+        right: Box<ASTNode<'a>>,
+    },
+}
+
+enum UnaryOperator {
+    Not,
+    BitInv,
+    Ref,
+    Deref,
+}
+
+enum BinaryOperator {
+    Set,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    BitAnd,
+    BitOr,
+    LShift,
+    RShift,
+    Eq,
+    NotEq,
+    Lt,
+    Gt,
+    LtEq,
+    GtEq,
+    // TODO: Add '.' to access to struct's fields
 }
 
 struct Field<'a> {
@@ -56,13 +124,21 @@ impl<'a> LexerOutputCursor<'a> {
         Self { data, cursor: 0 }
     }
 
-    pub fn next(&mut self) -> Option<&Token<'a>> {
+    pub fn next(&mut self) -> Option<&'a Token<'a>> {
         if let Some(t) = self.data.get(self.cursor) {
             self.cursor += 1;
             Some(t)
         } else {
             None
         }
+    }
+
+    pub fn peek_prev(&self, offset: usize) -> Option<&Token<'a>> {
+        if self.cursor < offset + 1 {
+            return None;
+        }
+
+        self.data.get(self.cursor - offset - 1)
     }
 
     pub fn peek(&self, offset: usize) -> Option<&Token<'a>> {
@@ -78,7 +154,7 @@ impl<'a> LexerOutputCursor<'a> {
     }
 }
 
-type SubParserOutput<'a> = Result<(ASTNode<'a>, LexerOutputCursor<'a>), ParserError<'a>>;
+type SubParserOutput<'a> = Result<(ASTNodeKind<'a>, LexerOutputCursor<'a>), ParserError<'a>>;
 
 pub fn parse<'a>(src: LexerOutput<'a>, diag: &mut Diagnostic) {
     // let parser = Parser::new(src);
@@ -95,122 +171,175 @@ fn parse_block_with_params<'a>(
     is_root: bool,
 ) -> SubParserOutput<'a> {
     while let Some(token) = cursor.next() {
-        let d = match token.kind {
-            TokenKind::LBrace => parse_block(cursor),
-            TokenKind::Fn => parse_function_decl(cursor),
-            TokenKind::RBrace => {
+        match token.kind {
+            TokenKind::General(tk::LBrace) => parse_block(cursor),
+            TokenKind::General(tk::Fn) => parse_function_decl(cursor),
+            TokenKind::General(tk::RBrace) => {
                 break;
             }
             _ => unimplemented!(),
-        };
+        }?;
     }
-    unreachable!()
+    todo!()
     // Ok((ASTNode::Block { children: vec![] }))
 }
 
-macro_rules! match_token {
-    ($cursor:ident is $($token:ident)or+) => {
-        match $cursor.next() {
-            Some(token) => match token.kind {
-                $(TokenKind::$token => token, )*
-                _ => {
-                    return Err(ParserError::UnexpectedToken {
-                        token: *token,
-                        expected: vec![$(TokenKind::$token, )*]
-                    });
-                }
-            },
-            None => {
-                return Err(ParserError::EndOfFile {
-                    expected: vec![$(TokenKind::$token, )*]
-                });
-            }
-        }
-    };
+enum ExprUnit<'a> {
+    Operator,
+    Operand(ASTNode<'a>),
 }
+
+enum ExprUnitOperator {}
 
 fn parse_expression<'a>(
     mut cursor: LexerOutputCursor<'a>,
-    terminator: TokenKind,
+    terminator: &[TokenKind],
 ) -> SubParserOutput<'a> {
     while let Some(token) = cursor.next() {
+        if terminator.contains(&token.kind) {
+            break;
+        }
+
         let s = match token.kind {
-            TokenKind::LBrace => parse_block(cursor),
-            TokenKind::LRndBracket => parse_expression(cursor, TokenKind::RRndBracket),
-            TokenKind::Ident => {
-                if let Some(next_token) = cursor.peek(1)
-                    && next_token.kind == TokenKind::LRndBracket
-                {
-                    cursor.next();
-                    let e = parse_expression(cursor, TokenKind::Comma)?;
-                    match_token!(cursor is RRndBracket);
-                    todo!();
-                } else {
-                    todo!();
-                }
-            }
-            _ => {
-                todo!();
-            }
+            TokenKind::General(g) => {}
+            TokenKind::Operator(opertator) => {}
+            _ => {}
         };
+
+        // let s = match token.kind {
+        //     // TokenKind::LBrace => parse_block(cursor),
+        //     // (1 + 2)
+        //     TokenKind::LRndBracket => parse_expression(cursor, &[TokenKind::RRndBracket]),
+
+        //     // TokenKind::String => {
+        //     //     todo!();
+        //     // }
+
+        //     // TokenKind::Number(n) => {
+        //     //     todo!();
+        //     // }
+        //     TokenKind::Ident => {
+        //         // fn_name (10, 2)
+        //         if let Some(fcall) = try_parse_function_call(cursor) {
+        //             fcall
+        //         }
+        //         // var_name
+        //         else {
+        //             todo!()
+        //             // Ok((ASTNode::VarUse { name: token.word }, cursor))
+        //         }
+        //     }
+
+        //     // Add all operators
+        //     _ => {
+        //         todo!();
+        //     }
+        // };
     }
     todo!();
 }
+
+fn try_parse_function_call<'a>(mut cursor: LexerOutputCursor<'a>) -> Option<SubParserOutput<'a>> {
+    // Try to get function name and opening left round bracket
+    let name_token = cursor.next()?;
+    let lrndbr_token = cursor.next()?;
+
+    // Check if name and opening left round bracket was found
+    if !(name_token.kind == Gn(Ident) && lrndbr_token.kind == Gn(LRndBracket)) {
+        return None;
+    }
+
+    let name = name_token.word;
+
+    // Extract arguments, which separated with comma ','
+    // let mut args = vec![];
+    while let Some(token) = cursor.peek(0) {
+        let (expr, new_cursor) = match parse_expression(cursor, &[Gn(Comma), Gn(RRndBracket)]) {
+            Ok(ok) => ok,
+            Err(e) => return Some(Err(e)),
+        };
+
+        cursor = new_cursor;
+
+        if new_cursor
+            .peek_prev(0)
+            .unwrap_or_else(|| unreachable!())
+            .kind
+            == Gn(RRndBracket)
+        {
+            break;
+        }
+    }
+
+    todo!();
+}
+
+fn expect<'a>(
+    cursor: &mut LexerOutputCursor<'a>,
+    expected: &'static [TokenKind],
+) -> Result<Token<'a>, ParserError<'a>> {
+    match cursor.next() {
+        Some(token) => {
+            if expected.contains(&token.kind) {
+                Ok(*token)
+            } else {
+                Err(ParserError::UnexpectedToken {
+                    token: *token,
+                    expected,
+                })
+            }
+        }
+
+        None => Err(ParserError::EndOfFile { expected }),
+    }
+}
+
 // fn <name> ( [ <arg_name> : <arg_type>],* ) ? -> <return_type> ? %Block%
 fn parse_function_decl<'a>(mut cursor: LexerOutputCursor<'a>) -> SubParserOutput<'a> {
-    let name = match_token!(cursor is Ident).word;
+    let name = expect(&mut cursor, &[Gn(Ident)])?.word;
     // Args
-    match_token!(cursor is LRndBracket);
+    expect(&mut cursor, &[Gn(LRndBracket)])?;
     let mut args = vec![];
-    cursor = parse_fields_recursive(cursor, TokenKind::RRndBracket, &mut args)?;
-    match_token!(cursor is RRndBracket);
+    cursor = parse_fields_recursive(cursor, Gn(RRndBracket), &mut args)?;
+    expect(&mut cursor, &[Gn(RRndBracket)])?;
+
+    todo!("Impl return type");
+
+    let block_start_token = expect(&mut cursor, &[Gn(LBrace)])?;
 
     let (block, cursor) = parse_block(cursor)?;
 
-    fn add(a: i32, b: i32) -> i32 {
-        a + b
-    }
-
-    let a = add(2, {
-        fn m() -> i32 {
-            add(10, 5)
-        }
-        add(10, m())
-    });
-
     Ok((
-        ASTNode::FnDecl {
+        ASTNodeKind::FnDecl {
             name,
             args,
             return_type: None,
-            block: Box::new(block),
+            block: Box::new(ASTNode::new(block_start_token, block)),
         },
         cursor,
     ))
 }
 
-// let <name> : <var_type> = %Block%
+// let <name> : <var_type> = %Expr%
 fn parse_let_decl<'a>(mut cursor: LexerOutputCursor<'a>) -> SubParserOutput<'a> {
-    let name = match_token!(cursor is Ident).word;
-    match_token!(cursor is Colon);
-    let var_type = match_token!(cursor is Ident).word;
-    match_token!(
-        cursor is Set    or PlusSet   or MinusSet  or StarSet   or SlashSet  or
-                  ModSet or BitInvSet or LShiftSet or RShiftSet or BitAndSet or BitOrSet
-    );
-    let (block, new_cursor) = parse_block(cursor)?;
+    let name = expect(&mut cursor, &[Gn(Ident)])?.word;
+    expect(&mut cursor, &[Gn(Colon)])?;
+    let var_type = expect(&mut cursor, &[Gn(Ident)])?.word;
+    expect(&mut cursor, TOKEN_KIND_OPERATOR_CATEGORY)?;
+
+    let (expr, new_cursor) = parse_expression(cursor, &[Gn(Semicolon)])?;
     cursor = new_cursor;
-    match_token!(cursor is Semicolon);
+    expect(&mut cursor, &[Gn(Semicolon)])?;
     todo!();
 
-    Ok((
-        ASTNode::Let {
-            name,
-            var_type,
-            block: Box::new(block),
-        },
-        cursor,
-    ))
+    // Ok((
+    //     ASTNodeKind::Let {
+    //         name,
+    //         var_type,
+    //         expr: Box::new(expr),
+    //     },
+    //     cursor,
+    // ))
 }
 
 fn parse_fields_recursive<'a>(
@@ -231,7 +360,7 @@ fn parse_fields_recursive<'a>(
 
     // If next char is Comma (','), then next must be a field
     if let Some(token) = cursor.peek(0)
-        && token.kind == TokenKind::Comma
+        && token.kind == Gn(Comma)
     {
         cursor.next(); // cuz 'peek'. Need to skip Comma 
         cursor = parse_fields_recursive(cursor, end_token_kind, result)?;
@@ -244,16 +373,15 @@ fn parse_fields_recursive<'a>(
 fn try_parse_field<'a>(
     mut cursor: LexerOutputCursor<'a>,
 ) -> Result<(Field<'a>, LexerOutputCursor<'a>), ParserError<'a>> {
-    let name = match_token!(cursor is Ident).word;
-    match_token!(cursor is Colon);
-    let var_type = match_token!(cursor is Ident).word;
+    let name = expect(&mut cursor, &[Gn(Ident)])?.word;
+    expect(&mut cursor, &[Gn(Colon)])?;
+    let var_type = expect(&mut cursor, &[Gn(Ident)])?.word;
 
     Ok((Field { name, var_type }, cursor))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::TokenKind::*;
     use super::*;
 
     struct MockedTokens<'a> {
@@ -286,12 +414,12 @@ mod tests {
 
     #[test]
     fn try_parse_field_correct() {
-        test_try_parse_field(&[Ident, Colon, Ident], true);
+        test_try_parse_field(&[Gn(Ident), Gn(Colon), Gn(Ident)], true);
     }
 
     #[test]
     fn try_parse_field_incorrect() {
-        test_try_parse_field(&[Ident, Ident, Ident], false);
+        test_try_parse_field(&[Gn(Ident), Gn(Ident), Gn(Ident)], false);
     }
 
     #[test]
@@ -315,38 +443,38 @@ mod tests {
 
     #[test]
     fn parse_field_recursive_double_comma() {
-        let end_token_kind = RRndBracket;
-        let mut to_test = [Ident, Colon, Ident, Comma, Comma];
+        let end_token_kind = Gn(RRndBracket);
+        let to_test = [Gn(Ident), Gn(Colon), Gn(Ident), Gn(Comma), Gn(Comma)];
         test_parse_field_recursive(&to_test, end_token_kind, false, 1);
     }
 
     #[test]
     fn parse_field_recursive_three_args() {
-        let end_token_kind = RRndBracket;
-        let mut to_test = [Ident, Colon, Ident, Comma].repeat(3);
+        let end_token_kind = Gn(RRndBracket);
+        let mut to_test = [Gn(Ident), Gn(Colon), Gn(Ident), Gn(Comma)].repeat(3);
         to_test.push(end_token_kind);
         test_parse_field_recursive(&to_test, end_token_kind, true, 3);
     }
 
     #[test]
     fn parse_field_recursive_three_hundred_args() {
-        let end_token_kind = RRndBracket;
-        let mut to_test = [Ident, Colon, Ident, Comma].repeat(300);
+        let end_token_kind = Gn(RRndBracket);
+        let mut to_test = [Gn(Ident), Gn(Colon), Gn(Ident), Gn(Comma)].repeat(300);
         to_test.push(end_token_kind);
         test_parse_field_recursive(&to_test, end_token_kind, true, 300);
     }
 
     #[test]
     fn parse_field_recursive_three_hundred_args_wo_ending() {
-        let end_token_kind = RRndBracket;
-        let to_test = [Ident, Colon, Ident, Comma].repeat(300);
+        let end_token_kind = Gn(RRndBracket);
+        let to_test = [Gn(Ident), Gn(Colon), Gn(Ident), Gn(Comma)].repeat(300);
         test_parse_field_recursive(&to_test, end_token_kind, false, 300);
     }
 
     #[test]
     fn parse_field_recursive_three_args_wo_comma() {
-        let end_token_kind = RRndBracket;
-        let mut to_test = [Ident, Colon, Ident].repeat(3);
+        let end_token_kind = Gn(RRndBracket);
+        let mut to_test = [Gn(Ident), Gn(Colon), Gn(Ident)].repeat(3);
         to_test.push(end_token_kind);
         test_parse_field_recursive(&to_test, end_token_kind, true, 1);
     }

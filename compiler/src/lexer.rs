@@ -1,80 +1,6 @@
-use crate::{diagnostic::Diagnostic, types::NumWord};
+use crate::{diagnostic::Diagnostic, token::*, types::NumWord};
 
 const AVERAGE_WORD_LEN: usize = 4;
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Token<'a> {
-    pub word: NumWord<'a>,
-    pub kind: TokenKind,
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum TokenKind {
-    // Keywords
-    Fn,
-    Let,
-    If,
-    Else,
-    While,
-    Return,
-
-    Ident,
-    String, // "..."
-    Number(u64),
-
-    // Operators
-    Plus,      // +
-    Minus,     // -
-    Star,      // *
-    Slash,     // /
-    Mod,       // %
-    Not,       // !
-    BitInv,    // ~
-    LShift,    // <<
-    RShift,    // >>
-    Ampersand, // &
-    Bar,       // |
-
-    // Setters
-    Set,       // =
-    PlusSet,   // +=
-    MinusSet,  // -=
-    StarSet,   // *=
-    SlashSet,  // /=
-    ModSet,    // %=
-    BitInvSet, // ~=
-    LShiftSet, // <<=
-    RShiftSet, // >>=
-    BitAndSet, // &=
-    BitOrSet,  // |=
-
-    // Logical
-    And, // &&
-    Or,  // ||
-
-    // Comparators
-    Eq,    // ==
-    NotEq, // !=
-    Lt,    // <
-    Gt,    // >
-    LtEq,  // <=
-    GtEq,  // >=
-
-    // Brackets
-    LBracket,    // [
-    RBracket,    // ]
-    LRndBracket, // (
-    RRndBracket, // )
-    LBrace,      // {
-    RBrace,      // }
-
-    Arrow,     // ->
-    Semicolon, // ;
-    Colon,     // :
-    Comma,     // ,
-    Dot,       // .
-    Unknown,
-}
 
 pub type LexerOutput<'a> = Vec<Token<'a>>;
 
@@ -88,75 +14,78 @@ pub fn lex<'a>(source_code: &'a str, diag: &mut Diagnostic) -> Result<LexerOutpu
     for num_word in spltted {
         #[rustfmt::skip]
         let kind = match num_word.word {
-            "fn"      => TokenKind::Fn,
-            "let"     => TokenKind::Let,
-            "if"      => TokenKind::If,
-            "else"    => TokenKind::Else,
-            "while"   => TokenKind::While,
-            "return"  => TokenKind::Return,
-            "+"       => TokenKind::Plus,
-            "-"       => TokenKind::Minus,
-            "*"       => TokenKind::Star,
-            "/"       => TokenKind::Slash,
-            "%"       => TokenKind::Mod,
-            "!"       => TokenKind::Not,
-            "~"       => TokenKind::BitInv,
-            "<<"      => TokenKind::LShift,
-            ">>"      => TokenKind::RShift,
-            "&"       => TokenKind::Ampersand,
-            "|"       => TokenKind::Bar,
-            "="       => TokenKind::Set,
-            "+="      => TokenKind::PlusSet,
-            "-="      => TokenKind::MinusSet,
-            "*="      => TokenKind::StarSet,
-            "/="      => TokenKind::SlashSet,
-            "%="      => TokenKind::ModSet,
-            "!="      => TokenKind::NotEq,
-            "~="      => TokenKind::BitInvSet,
-            "<<="     => TokenKind::LShiftSet,
-            ">>="     => TokenKind::RShiftSet,
-            "&="      => TokenKind::BitAndSet,
-            "|="      => TokenKind::BitOrSet,
-            "&&"      => TokenKind::And,
-            "||"      => TokenKind::Or,
-            "=="      => TokenKind::Eq,
-            "<"       => TokenKind::Lt,
-            ">"       => TokenKind::Gt,
-            "<="      => TokenKind::LtEq,
-            ">="      => TokenKind::GtEq,
-            "["       => TokenKind::LBracket, 
-            "]"       => TokenKind::RBracket, 
-            "("       => TokenKind::LRndBracket, 
-            ")"       => TokenKind::RRndBracket, 
-            "{"       => TokenKind::LBrace, 
-            "}"       => TokenKind::RBrace,
-            "->"      => TokenKind::Arrow,
-            ";"       => TokenKind::Semicolon,
-            ":"       => TokenKind::Colon,
-            ","       => TokenKind::Comma,
-            "."       => TokenKind::Dot,
+            "fn"      => TokenKind::General(tk::Fn),
+            "let"     => TokenKind::General(tk::Let),
+            "if"      => TokenKind::General(tk::If),
+            "else"    => TokenKind::General(tk::Else),
+            "while"   => TokenKind::General(tk::While),
+            "return"  => TokenKind::General(tk::Return),
+            "("       => TokenKind::General(tk::LRndBracket),
+            ")"       => TokenKind::General(tk::RRndBracket),
+            "{"       => TokenKind::General(tk::LBrace), 
+            "}"       => TokenKind::General(tk::RBrace),
+            "->"      => TokenKind::General(tk::Arrow),
+            ";"       => TokenKind::General(tk::Semicolon),
+            ":"       => TokenKind::General(tk::Colon),
+            ","       => TokenKind::General(tk::Comma),
+            
+            "+"       => TokenKind::Operator(tk::Plus),
+            "-"       => TokenKind::Operator(tk::Minus),
+            "*"       => TokenKind::Operator(tk::Star),
+            "/"       => TokenKind::Operator(tk::Slash),
+            "%"       => TokenKind::Operator(tk::Mod),
+            "!"       => TokenKind::Operator(tk::Not),
+            "~"       => TokenKind::Operator(tk::BitInv),
+            "<<"      => TokenKind::Operator(tk::LShift),
+            ">>"      => TokenKind::Operator(tk::RShift),
+            "&"       => TokenKind::Operator(tk::Ampersand),
+            "|"       => TokenKind::Operator(tk::Bar),
+            "&&"      => TokenKind::Operator(tk::And),
+            "||"      => TokenKind::Operator(tk::Or),
+            "=="      => TokenKind::Operator(tk::Eq),
+            "!="      => TokenKind::Operator(tk::NotEq),
+            "<"       => TokenKind::Operator(tk::Lt),
+            ">"       => TokenKind::Operator(tk::Gt),
+            "<="      => TokenKind::Operator(tk::LtEq),
+            ">="      => TokenKind::Operator(tk::GtEq),
+
+            "="       => TokenKind::Setter(tk::Set),
+            "+="      => TokenKind::Setter(tk::PlusSet),
+            "-="      => TokenKind::Setter(tk::MinusSet),
+            "*="      => TokenKind::Setter(tk::StarSet),
+            "/="      => TokenKind::Setter(tk::SlashSet),
+            "%="      => TokenKind::Setter(tk::ModSet),
+            "~="      => TokenKind::Setter(tk::BitInvSet),
+            "<<="     => TokenKind::Setter(tk::LShiftSet),
+            ">>="     => TokenKind::Setter(tk::RShiftSet),
+            "&="      => TokenKind::Setter(tk::BitAndSet),
+            "|="      => TokenKind::Setter(tk::BitOrSet),
+            
             // String literal: enclosed in quotes "..."
-            _ if num_word.word.starts_with('"') => TokenKind::String,
+            _ if num_word.word.starts_with('"') => TokenKind::General(tk::String),
             // Identifier: alphanumeric characters or '_', must not start with digit
-            _ if word_is_ident(num_word.word)   => TokenKind::Ident,
+            _ if word_is_ident(num_word.word)   => TokenKind::General(tk::Ident),
+            // Numeric literal: digits or '_' (sugar for view separation)
+            _ if word_is_number(num_word.word)  => TokenKind::General(tk::Number), 
             _ => {
                 // Numeric literal: digits or '_' (sugar for view separation)
-                if let Some(parse_result) = word_is_number(num_word.word) {
-                    match parse_result {
-                        Ok(number) => TokenKind::Number(number),
-                        Err(message) => {
-                            diag.error(message, num_word.line, num_word.col);
-                            TokenKind::Unknown
-                        }
-                    }
-                } else {
+                // if let Some(parse_result) = word_is_number(num_word.word) {
+                //     match parse_result {
+                //         Ok(number) => TokenKind::General(tk::Number(number)),
+                //         Err(message) => {
+                //             diag.error(message, num_word.line, num_word.col);
+                //             TokenKind::Unknown
+                //         }
+                //     }
+                //
+                // } else {
                     diag.error(
                         format!("unexpected token '{}'", num_word.word),
                         num_word.line,
                         num_word.col
                     );
                     TokenKind::Unknown
-                }
+                // }
             }
         };
 
@@ -186,41 +115,45 @@ fn word_is_ident(word: &str) -> bool {
     true
 }
 
-fn word_is_number(word: &str) -> Option<Result<u64, &'static str>> {
-    // Get base of the number
-    let (radix, word) = if let Some(n) = word.strip_prefix("0b") {
-        (2u32, n)
-    } else if let Some(n) = word.strip_prefix("0o") {
-        (8u32, n)
-    } else if let Some(n) = word.strip_prefix("0x") {
-        (16u32, n)
-    } else if word.starts_with(|c: char| c.is_ascii_digit()) {
-        (10u32, word)
-    } else {
-        return None;
-    };
-
-    // Remove '_' from the string. '1_000_000' -> '1000000'
-    let clean_word = word.chars().filter(|&c| c != '_').collect::<String>();
-
-    if clean_word.is_empty() {
-        // Unreacheble for decimal
-        return Some(Err("missing digits after the integer base prefix"));
-    }
-
-    // Check all chars is digits or '_'
-    if !clean_word.chars().all(|c| c.is_digit(radix)) {
-        return Some(Err("invalid digits"));
-    }
-
-    match u64::from_str_radix(&clean_word, radix) {
-        Ok(n) => Some(Ok(n)),
-        Err(e) => match e.kind() {
-            std::num::IntErrorKind::PosOverflow => Some(Err("numerical literal is too large")),
-            _ => unreachable!("Unexpected error when parsing a number. IT IS A BUG!!!"),
-        },
-    }
+fn word_is_number(word: &str) -> bool {
+    word.starts_with(&['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
 }
+
+// fn word_is_number(word: &str) -> Option<Result<u64, &'static str>> {
+//     // Get base of the number
+//     let (radix, word) = if let Some(n) = word.strip_prefix("0b") {
+//         (2u32, n)
+//     } else if let Some(n) = word.strip_prefix("0o") {
+//         (8u32, n)
+//     } else if let Some(n) = word.strip_prefix("0x") {
+//         (16u32, n)
+//     } else if word.starts_with(|c: char| c.is_ascii_digit()) {
+//         (10u32, word)
+//     } else {
+//         return None;
+//     };
+
+//     // Remove '_' from the string. '1_000_000' -> '1000000'
+//     let clean_word = word.chars().filter(|&c| c != '_').collect::<String>();
+
+//     if clean_word.is_empty() {
+//         // Unreacheble for decimal
+//         return Some(Err("missing digits after the integer base prefix"));
+//     }
+
+//     // Check all chars is digits or '_'
+//     if !clean_word.chars().all(|c| c.is_digit(radix)) {
+//         return Some(Err("invalid digits"));
+//     }
+
+//     match u64::from_str_radix(&clean_word, radix) {
+//         Ok(n) => Some(Ok(n)),
+//         Err(e) => match e.kind() {
+//             std::num::IntErrorKind::PosOverflow => Some(Err("numerical literal is too large")),
+//             _ => unreachable!("Unexpected error when parsing a number. IT IS A BUG!!!"),
+//         },
+//     }
+// }
 
 struct WordStart {
     idx: usize,
@@ -422,8 +355,14 @@ impl<'a, 'b> LexerSplitter<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LexerOutput, TokenKind, TokenKind::*};
+    use super::*;
     use crate::diagnostic::Diagnostic;
+
+    use TokenKind::General as Gn;
+    use TokenKind::Operator as Op;
+    use TokenKind::Setter as St;
+    use TokenKind::Unknown;
+    use tk::*;
 
     fn call_lexer<'a>(source_code: &'a str) -> (Result<LexerOutput<'a>, ()>, Diagnostic) {
         let mut diag = Diagnostic::new();
@@ -443,17 +382,17 @@ mod tests {
         assert_eq!(
             token_kinds(result.unwrap()),
             vec![
-                Let,
-                Ident,
-                Colon,
-                Number(32),
-                Set,
-                Number(10),
-                Star,
-                Number(5),
-                Minus,
-                Number(10),
-                Semicolon
+                Gn(Let),
+                Gn(Ident),
+                Gn(Colon),
+                Gn(Number),
+                St(Set),
+                Gn(Number),
+                Op(Star),
+                Gn(Number),
+                Op(Minus),
+                Gn(Number),
+                Gn(Semicolon),
             ]
         );
     }
@@ -479,7 +418,7 @@ mod tests {
         );
 
         assert!(diag.is_clear());
-        assert_eq!(token_kinds(result.unwrap()), vec![String]);
+        assert_eq!(token_kinds(result.unwrap()), vec![Gn(String)]);
     }
 
     #[test]
@@ -497,13 +436,7 @@ mod tests {
         assert!(diag.is_clear());
         assert_eq!(
             token_kinds(result.unwrap()),
-            vec![
-                Number(10000),
-                Number(1_000_000),
-                Number(0b101101),
-                Number(0o34263),
-                Number(0xFFAEEB)
-            ]
+            vec![Gn(Number), Gn(Number), Gn(Number), Gn(Number), Gn(Number),]
         );
     }
 
@@ -523,24 +456,8 @@ mod tests {
             "#,
         );
 
-        assert!(diag.has_error());
-        assert_eq!(diag.items.len(), 9);
-        assert_eq!(token_kinds(result.unwrap()), vec![Unknown; 9]);
-    }
-
-    #[test]
-    fn number_literals_invalid_digits() {
-        let (result, diag) = call_lexer(
-            r#"
-                0b1121
-                0o55758
-                0xABCDEFG
-            "#,
-        );
-
-        assert!(diag.has_error());
-        assert_eq!(diag.items.len(), 3);
-        assert_eq!(token_kinds(result.unwrap()), vec![Unknown; 3]);
+        assert!(diag.is_clear());
+        assert_eq!(token_kinds(result.unwrap()), vec![Gn(Number); 9]);
     }
 
     #[test]
@@ -548,7 +465,7 @@ mod tests {
         let (result1, diag1) = call_lexer(
             r#"
             fn fib(n: u32) -> u32 {
-                "Ансасдф ... 45 }() {[&]}
+                "Ансасдф ... 45 }() {&}
                 
                 Тофик";
                 if n < 2 {return 1;}//Aboba
@@ -558,7 +475,7 @@ mod tests {
 
         let (result2, diag2) = call_lexer(
             r#"
-            fn fib(n:u32)->u32{"Ансасдф ... 45 }() {[&]}
+            fn fib(n:u32)->u32{"Ансасдф ... 45 }() {&}
                 
                 Тофик";if n<2{return 1;}return fib(n-2)+fib(n-1);}"#,
         );
@@ -592,7 +509,7 @@ mod tests {
         assert!(diag.has_error());
         assert_eq!(
             token_kinds(result.unwrap()),
-            vec![Ident, Set, Ident, Unknown, Ident]
+            vec![Gn(Ident), St(Set), Gn(Ident), Unknown, Gn(Ident)]
         );
     }
 }

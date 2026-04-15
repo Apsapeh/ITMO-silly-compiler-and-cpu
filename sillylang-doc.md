@@ -5,8 +5,9 @@
 
 
 ## Pointers:
-  `& <var>`  - Ref data, like in C, not pointers
-  `* <var>`  - Deref pointer
+ + `& <type>` - Pointer data type, like in C `*`
+ + `& <var>`  - Get data pointer, like in C, not reference
+ + `* <var>`  - Deref pointer
 
 
 ## Strings:
