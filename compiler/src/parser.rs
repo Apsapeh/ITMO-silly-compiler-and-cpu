@@ -195,6 +195,14 @@ fn parse_expression<'a>(
     mut cursor: LexerOutputCursor<'a>,
     terminator: &[TokenKind],
 ) -> SubParserOutput<'a> {
+    enum ExprParserExpected {
+        Operator,
+        Operand,
+    }
+    use ExprParserExpected::*;
+
+    let mut state = Operand;
+
     while let Some(token) = cursor.next() {
         if terminator.contains(&token.kind) {
             break;
@@ -328,6 +336,7 @@ fn parse_let_decl<'a>(mut cursor: LexerOutputCursor<'a>) -> SubParserOutput<'a> 
     expect(&mut cursor, TOKEN_KIND_OPERATOR_CATEGORY)?;
 
     let (expr, new_cursor) = parse_expression(cursor, &[Gn(Semicolon)])?;
+
     cursor = new_cursor;
     expect(&mut cursor, &[Gn(Semicolon)])?;
     todo!();
