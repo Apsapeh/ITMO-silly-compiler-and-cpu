@@ -6,75 +6,15 @@ pub struct Token<'a> {
     pub kind: TokenKind,
 }
 
-// #[derive(Debug, PartialEq, Clone, Copy)]
-// pub enum TokenKind {
-//     // Keywords
-//     Fn,
-//     Let,
-//     If,
-//     Else,
-//     While,
-//     Return,
-
-//     Ident,
-//     String, // "..."
-//     Number(u64),
-
-//     // Operators
-//     Plus,      // +
-//     Minus,     // -
-//     Star,      // *
-//     Slash,     // /
-//     Mod,       // %
-//     Not,       // !
-//     BitInv,    // ~
-//     LShift,    // <<
-//     RShift,    // >>
-//     Ampersand, // &
-//     Bar,       // |
-
-//     // Logical Operators
-//     And, // &&
-//     Or,  // ||
-
-//     // Setters
-//     Set,       // =
-//     PlusSet,   // +=
-//     MinusSet,  // -=
-//     StarSet,   // *=
-//     SlashSet,  // /=
-//     ModSet,    // %=
-//     BitInvSet, // ~=
-//     LShiftSet, // <<=
-//     RShiftSet, // >>=
-//     BitAndSet, // &=
-//     BitOrSet,  // |=
-
-//     // Comparators
-//     Eq,    // ==
-//     NotEq, // !=
-//     Lt,    // <
-//     Gt,    // >
-//     LtEq,  // <=
-//     GtEq,  // >=
-
-//     // Brackets
-//     // LBracket,    // [
-//     // RBracket,    // ]
-//     LRndBracket, // (
-//     RRndBracket, // )
-//     LBrace,      // {
-//     RBrace,      // }
-
-//     Arrow,     // ->
-//     Semicolon, // ;
-//     Colon,     // :
-//     Comma,     // ,
-//     // Dot,       // .
-//     Unknown,
-// }
-
 pub mod tk {
+    /// https://danielkeep.github.io/tlborm/book/blk-counting.html
+    /// 0usize $(+ replace_expr!($tts 1usize))*
+    macro_rules! replace_expr {
+        ($_t:tt $sub:expr) => {
+            $sub
+        };
+    }
+
     macro_rules! define_token_enum {
         (
             $vis:vis enum $name:ident { $($variant:ident),* $(,)? }
@@ -83,7 +23,7 @@ pub mod tk {
             #[derive(Debug, PartialEq, Clone, Copy)]
             $vis enum $name { $($variant),* }
 
-            $vis static $static_name: &[super::TokenKind] = &[
+            $vis static $static_name: [super::TokenKind; 0usize $(+ replace_expr!($variant 1usize))*] = [
                 $( super::TokenKind::$name($name::$variant) ),*
             ];
         }

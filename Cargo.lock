@@ -3,8 +3,17 @@
 version = 4
 
 [[package]]
+name = "array-concat"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de9067cfeb22d851858da2a5af9a82e385d363623094efa61cef7a45e651fc81"
+
+[[package]]
 name = "compiler"
 version = "0.1.0"
+dependencies = [
+ "array-concat",
+]
 
 [[package]]
 name = "cpu"

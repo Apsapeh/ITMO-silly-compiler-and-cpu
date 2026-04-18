@@ -1,10 +1,15 @@
+use std::fmt::Pointer;
+use std::iter::Peekable;
+
 use crate::{diagnostic::Diagnostic, error::*, lexer::*, token::tk::*, token::*, types::NumWord};
+use array_concat::*;
 
 use TokenKind::General as Gn;
 use TokenKind::Operator as Op;
 use TokenKind::Setter as St;
 use TokenKind::Unknown;
 
+#[derive(Debug)]
 struct ASTNode<'a> {
     token: Token<'a>,
     kind: ASTNodeKind<'a>,
@@ -16,6 +21,7 @@ impl<'a> ASTNode<'a> {
     }
 }
 
+#[derive(Debug)]
 enum ASTNodeKind<'a> {
     FnDecl {
         name: NumWord<'a>,
@@ -61,13 +67,11 @@ enum ASTNodeKind<'a> {
     //     name: NumWord<'a>,
     //     expr: Box<ASTNode<'a>>,
     // },
-    String {
-        string: NumWord<'a>,
-    },
+    String,
 
-    Number {},
+    Number,
 
-    Let {},
+    Let,
 
     UnaryOperator {
         op: UnaryOperator,
@@ -81,6 +85,7 @@ enum ASTNodeKind<'a> {
     },
 }
 
+#[derive(Debug)]
 enum UnaryOperator {
     Not,
     BitInv,
@@ -88,26 +93,37 @@ enum UnaryOperator {
     Deref,
 }
 
+#[derive(Debug)]
 enum BinaryOperator {
-    Set,
-    Add,
-    Sub,
+    // Set,
     Mul,
     Div,
     Mod,
-    BitAnd,
-    BitOr,
+
+    Add,
+    Sub,
+
     LShift,
     RShift,
-    Eq,
-    NotEq,
+
     Lt,
     Gt,
     LtEq,
     GtEq,
-    // TODO: Add '.' to access to struct's fields
+
+    Eq,
+    NotEq,
+
+    BitAnd,
+
+    BitOr,
+
+    And,
+
+    Or, // TODO: Add '.' to access to struct's fields
 }
 
+#[derive(Debug)]
 struct Field<'a> {
     name: NumWord<'a>,
     var_type: NumWord<'a>,
@@ -184,67 +200,201 @@ fn parse_block_with_params<'a>(
     // Ok((ASTNode::Block { children: vec![] }))
 }
 
+#[derive(Debug)]
 enum ExprUnit<'a> {
-    Operator,
+    Operator { token: Token<'a>, op: tk::Operator },
     Operand(ASTNode<'a>),
 }
-
-enum ExprUnitOperator {}
 
 fn parse_expression<'a>(
     mut cursor: LexerOutputCursor<'a>,
     terminator: &[TokenKind],
 ) -> SubParserOutput<'a> {
-    enum ExprParserExpected {
-        Operator,
-        Operand,
-    }
-    use ExprParserExpected::*;
-
-    let mut state = Operand;
+    let mut units = vec![];
 
     while let Some(token) = cursor.next() {
         if terminator.contains(&token.kind) {
             break;
         }
 
-        let s = match token.kind {
-            TokenKind::General(g) => {}
-            TokenKind::Operator(opertator) => {}
-            _ => {}
+        let unit = match token.kind {
+            // Subexpressions, surrounded by round brackets: (1 + 2)
+            TokenKind::General(tk::LRndBracket) => {
+                let (expr_node, new_cursor) = parse_expression(cursor, &[Gn(tk::RRndBracket)])?;
+                cursor = new_cursor;
+                ExprUnit::Operand(ASTNode::new(*token, expr_node))
+            }
+
+            TokenKind::General(tk::String) => {
+                ExprUnit::Operand(ASTNode::new(*token, ASTNodeKind::String))
+            }
+
+            TokenKind::General(tk::Number) => {
+                ExprUnit::Operand(ASTNode::new(*token, ASTNodeKind::Number))
+            }
+
+            TokenKind::General(tk::Ident) => {
+                // Function calling: foo(10, 2)
+                if let Some(fcall) = try_parse_function_call(cursor) {
+                    let (node, new_cursor) = fcall?;
+                    cursor = new_cursor;
+                    ExprUnit::Operand(ASTNode::new(*token, node))
+                // Just variable
+                } else {
+                    ExprUnit::Operand(ASTNode::new(*token, ASTNodeKind::Let))
+                }
+            }
+
+            TokenKind::Operator(op) => ExprUnit::Operator { token: *token, op },
+            _ => {
+                // It's stupid, but concat two const array at compile time is non-trivial
+                static A: [TokenKind; 3] = [Gn(tk::LRndBracket), Gn(tk::String), Gn(tk::Number)];
+                static EXPECTED: [TokenKind; concat_arrays_size!(TOKEN_KIND_OPERATOR_CATEGORY, A)] =
+                    concat_arrays!(TOKEN_KIND_OPERATOR_CATEGORY, A);
+
+                return Err(ParserError::UnexpectedToken {
+                    token: *token,
+                    expected: &EXPECTED,
+                });
+            }
         };
 
-        // let s = match token.kind {
-        //     // TokenKind::LBrace => parse_block(cursor),
-        //     // (1 + 2)
-        //     TokenKind::LRndBracket => parse_expression(cursor, &[TokenKind::RRndBracket]),
-
-        //     // TokenKind::String => {
-        //     //     todo!();
-        //     // }
-
-        //     // TokenKind::Number(n) => {
-        //     //     todo!();
-        //     // }
-        //     TokenKind::Ident => {
-        //         // fn_name (10, 2)
-        //         if let Some(fcall) = try_parse_function_call(cursor) {
-        //             fcall
-        //         }
-        //         // var_name
-        //         else {
-        //             todo!()
-        //             // Ok((ASTNode::VarUse { name: token.word }, cursor))
-        //         }
-        //     }
-
-        //     // Add all operators
-        //     _ => {
-        //         todo!();
-        //     }
-        // };
+        units.push(unit);
     }
-    todo!();
+
+    if units.is_empty() {
+        // TODO: Impl error: expression is empty
+        unimplemented!();
+    }
+
+    for u in &units {
+        println!("{:?}", u)
+    }
+
+    // resolve
+    let mut iter = units.into_iter().peekable();
+
+    let out = pratt_parser(&mut iter, 0, 0)?;
+    println!("{:#?}", out);
+    Ok((out.kind, cursor))
+}
+
+// a   +   b   *   c   *   d   +   e
+//   1   2   3   4   3   4   1   2
+
+fn pratt_parser<'a>(
+    // cursor: &mut impl Iterator<Item = ExprUnit<'a>>,
+    cursor: &mut Peekable<impl Iterator<Item = ExprUnit<'a>>>,
+    min_bp: u8,
+    depth: u16,
+) -> Result<ASTNode<'a>, ParserError<'a>> {
+    if depth > 500 {
+        unimplemented!();
+    }
+
+    let lhs = match cursor.next() {
+        Some(u) => u,
+        None => unimplemented!(),
+    };
+
+    let mut lhs = match lhs {
+        ExprUnit::Operand(n) => n,
+        ExprUnit::Operator { token, op } => {
+            unimplemented!()
+        }
+    };
+
+    loop {
+        // I don't know other way to defeat the borrow checker (it's triggers at &mut cursor)
+        let (token, op) = match cursor.peek() {
+            Some(ExprUnit::Operator { token, op }) => (*token, *op),
+            Some(ExprUnit::Operand(_)) => unimplemented!(),
+            None => break,
+        };
+
+        let (l_bp, r_bp, bin_op) = binary_op_power(op, token)?;
+        if l_bp < min_bp {
+            break;
+        }
+
+        cursor.next();
+
+        let rhs = pratt_parser(cursor, r_bp, depth + 1)?;
+
+        lhs = ASTNode::new(
+            token,
+            ASTNodeKind::BinaryOperator {
+                op: bin_op,
+                left: Box::new(lhs),
+                right: Box::new(rhs),
+            },
+        )
+    }
+
+    Ok(lhs)
+}
+
+fn binary_op_power<'a>(
+    operator: Operator,
+    token: Token<'a>,
+) -> Result<(u8, u8, BinaryOperator), ParserError<'a>> {
+    use BinaryOperator as bo;
+    use Operator as op;
+
+    let ok = match operator {
+        op::Star => (130, 131, bo::Mul),
+        op::Slash => (130, 131, bo::Div),
+        op::Mod => (130, 131, bo::Mod),
+
+        op::Plus => (120, 121, bo::Add),
+        op::Minus => (120, 121, bo::Sub),
+
+        op::LShift => (110, 111, bo::LShift),
+        op::RShift => (110, 111, bo::RShift),
+
+        op::Lt => (100, 101, bo::Lt),
+        op::Gt => (100, 101, bo::Gt),
+        op::LtEq => (100, 101, bo::LtEq),
+        op::GtEq => (100, 101, bo::GtEq),
+
+        op::Eq => (90, 91, bo::Eq),
+        op::NotEq => (90, 91, bo::NotEq),
+
+        op::Ampersand => (80, 81, bo::BitAnd),
+
+        op::Bar => (70, 71, bo::BitOr),
+
+        op::And => (60, 61, bo::And),
+
+        op::Or => (50, 51, bo::Or),
+
+        op::Not | op::BitInv => {
+            return Err(ParserError::UnexpectedToken {
+                token,
+                expected: &[
+                    Op(op::Star),
+                    Op(op::Slash),
+                    Op(op::Mod),
+                    Op(op::Plus),
+                    Op(op::Minus),
+                    Op(op::LShift),
+                    Op(op::RShift),
+                    Op(op::Lt),
+                    Op(op::Gt),
+                    Op(op::LtEq),
+                    Op(op::GtEq),
+                    Op(op::Eq),
+                    Op(op::NotEq),
+                    Op(op::Ampersand),
+                    Op(op::Bar),
+                    Op(op::And),
+                    Op(op::Or),
+                ],
+            });
+        }
+    };
+
+    Ok(ok)
 }
 
 fn try_parse_function_call<'a>(mut cursor: LexerOutputCursor<'a>) -> Option<SubParserOutput<'a>> {
@@ -333,7 +483,7 @@ fn parse_let_decl<'a>(mut cursor: LexerOutputCursor<'a>) -> SubParserOutput<'a> 
     let name = expect(&mut cursor, &[Gn(Ident)])?.word;
     expect(&mut cursor, &[Gn(Colon)])?;
     let var_type = expect(&mut cursor, &[Gn(Ident)])?.word;
-    expect(&mut cursor, TOKEN_KIND_OPERATOR_CATEGORY)?;
+    expect(&mut cursor, &TOKEN_KIND_OPERATOR_CATEGORY)?;
 
     let (expr, new_cursor) = parse_expression(cursor, &[Gn(Semicolon)])?;
 
@@ -412,6 +562,36 @@ mod tests {
         fn cursor(&'a self) -> LexerOutputCursor<'a> {
             LexerOutputCursor::new(&self.tokens)
         }
+    }
+
+    // Expressions
+    fn test_parse_expression(to_test: &[TokenKind]) {
+        let tokens = MockedTokens::new(to_test);
+
+        let result = parse_expression(tokens.cursor(), &[Gn(tk::Semicolon)]);
+    }
+
+    #[test]
+    fn parse_expression_success() {
+        // 1 + 2 * A
+        // +
+        //   1
+        //   *
+        //     2
+        //     A
+        test_parse_expression(&[
+            Gn(Number),
+            Op(Plus),
+            Gn(Number),
+            Op(Star),
+            Gn(Ident),
+            Op(Plus),
+            Gn(LRndBracket),
+            Gn(Ident),
+            Op(Minus),
+            Gn(Ident),
+            Gn(RRndBracket),
+        ]);
     }
 
     fn test_try_parse_field(to_test: &[TokenKind], is_ok: bool) {
