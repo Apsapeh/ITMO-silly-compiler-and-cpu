@@ -87,10 +87,11 @@ enum ASTNodeKind<'a> {
 
 #[derive(Debug)]
 enum UnaryOperator {
-    Not,
-    BitInv,
-    Ref,
-    Deref,
+    Not,    //  !
+    BitInv, //  ~
+    Ref,    //  &
+    Deref,  //  *
+    Neg,    //  -
 }
 
 #[derive(Debug)]
@@ -294,12 +295,15 @@ fn pratt_parser<'a>(
 
     let lhs = match cursor.next() {
         Some(u) => u,
-        None => unimplemented!(),
+        None => {
+            return Err(ParserError::EndOfFile { expected: None });
+        }
     };
 
     let mut lhs = match lhs {
         ExprUnit::Operand(n) => n,
         ExprUnit::Operator { token, op } => {
+            // Unary
             unimplemented!()
         }
     };
@@ -308,7 +312,12 @@ fn pratt_parser<'a>(
         // I don't know other way to defeat the borrow checker (it's triggers at &mut cursor)
         let (token, op) = match cursor.peek() {
             Some(ExprUnit::Operator { token, op }) => (*token, *op),
-            Some(ExprUnit::Operand(_)) => unimplemented!(),
+            Some(ExprUnit::Operand(node)) => {
+                return Err(ParserError::UnexpectedToken {
+                    token: node.token,
+                    expected: &TOKEN_KIND_OPERATOR_CATEGORY,
+                });
+            }
             None => break,
         };
 
@@ -332,6 +341,37 @@ fn pratt_parser<'a>(
     }
 
     Ok(lhs)
+}
+
+fn unary_op_power<'a>(
+    operator: Operator,
+    token: Token<'a>,
+) -> Result<(u8, UnaryOperator), ParserError<'a>> {
+    use Operator as op;
+    use UnaryOperator as uo;
+
+    let ok = match operator {
+        op::Not => (30, uo::Not),
+        op::BitInv => (30, uo::BitInv),
+        op::Ampersand => (30, uo::Ref),
+        op::Star => (30, uo::Deref),
+        op::Minus => (30, uo::Neg),
+
+        _ => {
+            return Err(ParserError::UnexpectedToken {
+                token,
+                expected: &[
+                    Op(op::Not),
+                    Op(op::BitInv),
+                    Op(op::Ampersand),
+                    Op(op::Star),
+                    Op(op::Minus),
+                ],
+            });
+        }
+    };
+
+    Ok(ok)
 }
 
 fn binary_op_power<'a>(
@@ -448,7 +488,9 @@ fn expect<'a>(
             }
         }
 
-        None => Err(ParserError::EndOfFile { expected }),
+        None => Err(ParserError::EndOfFile {
+            expected: Some(expected),
+        }),
     }
 }
 

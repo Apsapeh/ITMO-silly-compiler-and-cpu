@@ -8,7 +8,7 @@ pub enum ParserError<'a> {
         expected: &'static [TokenKind],
     },
     EndOfFile {
-        expected: &'static [TokenKind],
+        expected: Option<&'static [TokenKind]>,
     },
 }
 
