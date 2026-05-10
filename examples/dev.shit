@@ -1,0 +1,49 @@
+! WORD - 32 bit
+! DWORD - 64 bit
+! [<N>]<T> - allocate N element of T and store pointer. If N == 0 or empty, it's just pointer
+!    = ~ > < ] [    + - * / %
+
+FUNCTION FACTORIAL N WORD RETURN WORD
+  IF  N LTEQ 1  OR  N GTEQ CALL GREATER (10, -10)
+    RETURN 1
+  ELSE
+    RETURN N MUL CALL FACTORIAL (N SUB 1)
+
+FUNCTION ADD A WORD, B WORD RETURN WORD
+  RETURN A ADD B
+
+PROCEDURE GREATER SEX []WORD, NAME []WORD 
+  CALL WRITE ("%s, %s %s!\n", "Hello", SEX, NAME)
+  CALL WRITE ("Please, write some number: ")
+
+
+PROCEDURE MAIN
+  CALL GREATER ("Mr.", "User")
+
+  VARIABLE N WORD
+  N = 2
+
+  N = N ADD CALL READ
+  
+  VARIABLE ARR [5]WORD       ! WORD(pointer), WORD(1), WORD(2), WORD(3), WORD(4), WORD(5)
+  [0]ARR = 0
+  [1]ARR = 1
+  [2]ARR = 2
+  [3]ARR = 3
+  [4]ARR = 4
+
+  ! Does nothing
+  LOOP
+    IF 1 EQ 1
+      STOP
+    STOP
+
+  VARIABLE STRING_POINTER []WORD       ! aka  @WORD.0
+  STRING_POINTER = "BIBA"
+  IF N EQ [3]ARR
+    VARIABLE LANG_NAME []WORD
+    LANG_NAME = "BOBA"
+    STRING_POINTER = LANG_NAME
+
+  CALL WRITE ("NAME: %s", STRING_POINTER)
+  CALL WRITE ("%w\n", CALL FACTORIAL (N))
