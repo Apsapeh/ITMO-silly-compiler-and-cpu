@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use crate::error::error;
 use crate::protolexer;
 
@@ -49,6 +51,101 @@ pub enum ASTNode {
     Stop,
 }
 
+// impl std::fmt::Display for ASTNode {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "")
+//     }
+// }
+
+impl ASTNode {
+    pub fn to_termtree(&self) -> termtree::Tree<String> {
+        let (root_str, leaves) = match self {
+            Self::Block { children } => {
+                let children = children.iter().map(|k| k.to_termtree()).collect::<Vec<_>>();
+                ("Block".to_string(), children)
+            }
+            Self::Procedure { name, args, block } => {
+                let mut tree_args = termtree::Tree::new("Args".to_string());
+                args.iter().for_each(|a| {
+                    tree_args.push(a.to_termtree());
+                });
+                let body = block.to_termtree();
+                (format!("Procedure ({})", name), vec![tree_args, body])
+            }
+
+            Self::Function {
+                name,
+                args,
+                rtype,
+                block,
+            } => {
+                let mut tree_args = termtree::Tree::new("Args".to_string());
+                args.iter().for_each(|a| {
+                    tree_args.push(a.to_termtree());
+                });
+                let body = block.to_termtree();
+                let mut rtype = rtype.to_termtree();
+                rtype.root.insert_str(0, "Return ");
+                (format!("Function ({})", name), vec![tree_args, rtype, body])
+            }
+
+            Self::If {
+                expr,
+                block,
+                else_block,
+            } => {
+                let mut v = vec![];
+                let mut cond = termtree::Tree::new("Condition".to_string());
+                cond.push(expr.to_termtree());
+                v.push(cond);
+                v.push(block.to_termtree());
+                if let Some(e) = else_block {
+                    let mut else_block = e.to_termtree();
+                    else_block.root = "Else".to_string();
+                    v.push(else_block);
+                }
+                ("If".to_string(), v)
+            }
+
+            Self::Loop { block } => ("Loop".to_string(), vec![block.to_termtree()]),
+
+            Self::FnCall(f) => {
+                let t = f.to_termtree();
+                (t.root, t.leaves)
+            }
+
+            Self::Variable { name, vtype } => {
+                (format!("Variable: {}", name), vec![vtype.to_termtree()])
+            }
+
+            Self::VariableSet { var, expr } => {
+                let mut expr_t = termtree::Tree::new("Expression".to_string());
+                expr_t.push(expr.to_termtree());
+                ("Set".to_string(), vec![var.to_termtree(), expr_t])
+            }
+
+            Self::Return { expr } => {
+                let expr = if let Some(e) = expr {
+                    vec![e.to_termtree()]
+                } else {
+                    vec![]
+                };
+                ("Return".to_string(), expr)
+            }
+
+            Self::Stop => ("Stop".to_string(), vec![]),
+            _ => ("".to_string(), vec![]),
+        };
+
+        let mut root = termtree::Tree::new(root_str);
+        for leave in leaves {
+            root.push(leave);
+        }
+
+        root
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum VarType {
     Word,  // 16 bit
@@ -81,6 +178,25 @@ impl VarType {
                 size,
             })
         }
+    }
+
+    pub fn to_termtree(&self) -> termtree::Tree<String> {
+        let (root_str, leaves) = match self {
+            Self::Word => ("WORD", vec![]),
+            Self::DWord => ("DWORD", vec![]),
+            Self::Ptr { vtype, size } => {
+                let vtype = vtype.to_termtree();
+                let size = termtree::Tree::new(format!("Size: {}", size));
+                ("PTR", vec![vtype, size])
+            }
+        };
+
+        let mut root = termtree::Tree::new(format!("Type: {}", root_str));
+        for leave in leaves {
+            root.push(leave);
+        }
+
+        root
     }
 }
 
@@ -332,6 +448,26 @@ impl Operator {
             _ => None,
         }
     }
+
+    pub fn to_termtree(&self) -> termtree::Tree<String> {
+        let str = match self {
+            Self::Add => "+",
+            Self::Sub => "-",
+            Self::Mul => "*",
+            Self::Div => "/",
+            Self::Mod => "%",
+            Self::Eq => "==",
+            Self::NotEq => "!=",
+            Self::Lt => "<",
+            Self::Gt => ">",
+            Self::LtEq => ">=",
+            Self::GtEq => "<=",
+            Self::And => "&&",
+            Self::Or => "||",
+        };
+
+        termtree::Tree::new(str.to_string())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -372,7 +508,10 @@ impl Expression {
             } else if word == "[" {
                 ExprUnit::Operand(Self::Variable(VariableUse::iter_parse_arr_deref(iter)?))
             } else if word == "(" {
-                ExprUnit::Operand(Self::Expr(Box::new(Expression::iter_parse(iter, &[")"])?)))
+                let u =
+                    ExprUnit::Operand(Self::Expr(Box::new(Expression::iter_parse(iter, &[")"])?)));
+                iter.next(); // Skip ")"
+                u
             } else if word.starts_with("\"") {
                 let str_num = word.strip_prefix("\"").unwrap().parse::<usize>().unwrap();
                 ExprUnit::Operand(Self::CString(str_num))
@@ -450,6 +589,22 @@ impl Expression {
 
         Ok(lhs)
     }
+
+    pub fn to_termtree(&self) -> termtree::Tree<String> {
+        match self {
+            Self::Number(n) => termtree::Tree::new(format!("Number: {}", n)),
+            Self::CString(c) => termtree::Tree::new(format!("String: {}", c)),
+            Self::Variable(v) => v.to_termtree(),
+            Self::FnCall(f) => f.to_termtree(),
+            Self::Expr(e) => e.to_termtree(),
+            Self::BinaryOp { op, left, right } => {
+                let mut op = op.to_termtree();
+                op.push(left.to_termtree());
+                op.push(right.to_termtree());
+                op
+            }
+        }
+    }
 }
 
 /* ===============================> Other (shared) parsers and types <============================== */
@@ -482,6 +637,12 @@ impl Argument {
             return Ok(vec![]);
         }
         raw.split(|w| w == ",").map(Self::from_raw).collect()
+    }
+
+    pub fn to_termtree(&self) -> termtree::Tree<String> {
+        let mut root = termtree::Tree::new(self.name.clone());
+        root.push(self.vtype.to_termtree());
+        root
     }
 }
 
@@ -540,6 +701,14 @@ impl FnCall {
         let mut iter = raw.iter().peekable();
         Self::iter_parse(&mut iter)
     }
+
+    pub fn to_termtree(&self) -> termtree::Tree<String> {
+        let mut root = termtree::Tree::new(format!("Call ({})", self.name.clone()));
+        self.args.iter().for_each(|a| {
+            root.push(a.to_termtree());
+        });
+        root
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -572,5 +741,15 @@ impl VariableUse {
             name: name.clone(),
             deref_offset: Some(Box::new(offset)),
         })
+    }
+
+    pub fn to_termtree(&self) -> termtree::Tree<String> {
+        let mut root = termtree::Tree::new(format!("Variable: {}", self.name));
+        if let Some(of) = &self.deref_offset {
+            let mut r = termtree::Tree::new(format!("Deref offset"));
+            r.push(of.to_termtree());
+            root.push(r);
+        }
+        root
     }
 }
