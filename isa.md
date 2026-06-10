@@ -77,16 +77,14 @@ IP - Instruction pointer
 
 ## Logic
 
-| Instruction   | Opcode |    Mode    |     Length      |     Delay      | ZF  | NF  | CF  | OF  | Description |
-| ------------- | :----: | :--------: | :-------------: | :------------: | :-: | :-: | :-: | :-: | ----------- |
-| AND dist, src |        |    ANY     | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
-| OR dist, src  |        |    ANY     | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
-| XOR dist, src |        |    ANY     | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
-| NOT dist, src |        |    ANY     | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
-| SHL dist, src |        | ANY-to-Reg | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
-| SHR dist, src |        | ANY-to-Reg | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
-| SAR dist, src |        | ANY-to-Reg | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
-| SAR dist, src |        | ANY-to-Reg | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
+| Instruction    | Opcode |    Mode    |     Length      |     Delay      | ZF  | NF  | CF  | OF  | Description |
+| -------------- | :----: | :--------: | :-------------: | :------------: | :-: | :-: | :-: | :-: | ----------- |
+| AND dist, src  |        |    ANY     | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
+| OR dist, src   |        |    ANY     | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
+| XOR dist, src  |        |    ANY     | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
+| NOT dist, src  |        | Reg-to-Reg | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
+| SHL dist, #off |        | Imm-to-Reg | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
+| SHR dist, #off |        | Imm-to-Reg | 1 + mode length | 1 + mode delay | \*  | \*  | \*  | \*  |             |
 
 ## Comparision
 
@@ -97,25 +95,23 @@ IP - Instruction pointer
 
 ## Control flow
 
-| Instruction | Opcode |    Mode    |     Length      |     Delay      | ZF  | NF  | CF  | OF  | Description                      |
-| ----------- | :----: | :--------: | :-------------: | :------------: | :-: | :-: | :-: | :-: | -------------------------------- |
-| JMP dist    |        | ANY-to-Reg | 1 + mode length | 1 + mode delay |  -  |  -  |  -  |  -  | IP ← dist                        |
-| JE #addr    |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if ZF=1: IP ← #addr              |
-| JNE #addr   |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if ZF=0: IP ← #addr              |
-| JNS #addr   |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if NF=1: IP ← #addr              |
-| JNC #addr   |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if NF=1: IP ← #addr              |
-| JCS #addr   |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if CF=1: IP ← #addr              |
-| JCC #addr   |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if CF=0: IP ← #addr              |
-| JOS #addr   |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if OF=1: IP ← #addr              |
-| JOC #addr   |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if OF=0: IP ← #addr              |
-| JL #addr    |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if NF != OF: IP ← #addr          |
-| JLE #addr   |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if ZF=1 or NF!=OF: IP ← #addr    |
-| JG #addr    |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if ZF=0 and NF=OF: IP ← #addr    |
-| JGE #addr   |        | Imm-to-Reg |        2        |       2        |  -  |  -  |  -  |  -  | if NF=OF: IP ← #addr             |
-| CALL #addr  |        | Imm-to-Reg |        2        |       3        |  -  |  -  |  -  |  -  | SP ← SP-1; [SP] ← IP; IP ← #addr |
-| RET         |        |     \*     |       \*1       |      \*2       |  -  |  -  |  -  |  -  | IP ← [SP]; SP ← SP+1             |
-
-\* - RET mode can be ANY, but you should use Reg-to-Reg to avoid performance loss
+| Instruction | Opcode |    Mode    | Length | Delay | ZF  | NF  | CF  | OF  | Description                      |
+| ----------- | :----: | :--------: | :----: | :---: | :-: | :-: | :-: | :-: | -------------------------------- |
+| JMP #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | IP ← #addr                       |
+| JE #addr    |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if ZF=1: IP ← #addr              |
+| JNE #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if ZF=0: IP ← #addr              |
+| JNS #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if NF=1: IP ← #addr              |
+| JNC #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if NF=1: IP ← #addr              |
+| JCS #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if CF=1: IP ← #addr              |
+| JCC #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if CF=0: IP ← #addr              |
+| JOS #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if OF=1: IP ← #addr              |
+| JOC #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if OF=0: IP ← #addr              |
+| JL #addr    |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if NF != OF: IP ← #addr          |
+| JLE #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if ZF=1 or NF!=OF: IP ← #addr    |
+| JG #addr    |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if ZF=0 and NF=OF: IP ← #addr    |
+| JGE #addr   |        | Imm-to-Reg |   2    |   2   |  -  |  -  |  -  |  -  | if NF=OF: IP ← #addr             |
+| CALL #addr  |        | Imm-to-Reg |   2    |   3   |  -  |  -  |  -  |  -  | SP ← SP-1; [SP] ← IP; IP ← #addr |
+| RET         |        | Reg-to-Reg |   1    |   2   |  -  |  -  |  -  |  -  | IP ← [SP]; SP ← SP+1             |
 
 ## Stack
 
@@ -128,12 +124,11 @@ IP - Instruction pointer
 
 ## Interruptions
 
-| Instruction | Opcode |    Mode    | Length | Delay | ZF  | NF  | CF  | OF  | Description                                                |
-| ----------- | :----: | :--------: | :----: | :---: | :-: | :-: | :-: | :-: | ---------------------------------------------------------- |
-| INT #n      |        | Imm-to-Reg |   2    |   5   |  -  |  -  |  -  |  -  | programm interruption: PUSH FLAGS; PUSH IP; CLI; IP ← [#n] |
-| IRET        |        | Reg-to-Reg |   1    |   4   |  -  |  -  |  -  |  -  | POP IP; POP FLAGS                                          |
-| STI         |        | Reg-to-Reg |   1    |   1   |  -  |  -  |  -  |  -  | IF ← 1                                                     |
-| CLI         |        | Reg-to-Reg |   1    |   1   |  -  |  -  |  -  |  -  | IF ← 0                                                     |
+| Instruction | Opcode |    Mode    | Length | Delay | ZF  | NF  | CF  | OF  | Description       |
+| ----------- | :----: | :--------: | :----: | :---: | :-: | :-: | :-: | :-: | ----------------- |
+| IRET        |        | Reg-to-Reg |   1    |   4   |  -  |  -  |  -  |  -  | POP IP; POP FLAGS |
+| STI         |        | Reg-to-Reg |   1    |   1   |  -  |  -  |  -  |  -  | IF ← 1            |
+| CLI         |        | Reg-to-Reg |   1    |   1   |  -  |  -  |  -  |  -  | IF ← 0            |
 
 ### AND
 

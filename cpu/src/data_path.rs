@@ -4,8 +4,9 @@ use crate::general::*;
 
 const IO_READ: u16 = 0x80;
 const IO_WRITE: u16 = 0x81;
+pub const IO_IRQ_ADDR: u16 = 0x10;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug)]
 pub enum AluOperation {
     #[default]
     PassLeft,
@@ -27,6 +28,8 @@ pub enum AluOperation {
     ShiftL,
     Cmp,
     Test,
+    PassFlags,
+    LoadFlagsLeft,
 }
 
 #[derive(Clone, Copy)]
@@ -37,7 +40,12 @@ enum CpuFlags {
     OF,
 }
 
-#[derive(Clone, Copy, Default)]
+const ZF: usize = CpuFlags::ZF as usize;
+const NF: usize = CpuFlags::NF as usize;
+const CF: usize = CpuFlags::CF as usize;
+const OF: usize = CpuFlags::OF as usize;
+
+#[derive(Clone, Copy, Default, Debug)]
 pub enum GeneralPurposeRegister {
     #[default]
     AL,
@@ -46,8 +54,8 @@ pub enum GeneralPurposeRegister {
     BH,
     CL,
     CH,
-    BP,
     SP,
+    BP,
 }
 
 pub struct DataPath {
@@ -73,7 +81,7 @@ impl DataPath {
             memory,
             io_read_buffer: 0,
             io_write_data: vec![],
-            io_irq: true,
+            io_irq: false,
             register_file: Default::default(),
             alu_state_flags: Default::default(),
             instruction_pointer: Default::default(),
@@ -85,6 +93,14 @@ impl DataPath {
     }
 
     pub fn tick(&mut self, cu_signals: control_unit::ControlSignals) {
+        if true {
+            println!("Signals: {:#?}", cu_signals);
+            println!("IP: {}", self.instruction_pointer.get());
+            println!("MAR: {}", self.mar_register.get());
+            println!("MDR: {}", self.mdr_register.get());
+            println!("TMP: {}", self.tmp_register.get());
+        }
+
         let gpr_read_a = self.register_file_get_register(cu_signals.rf_read_a);
         let gpr_read_b = self.register_file_get_register(cu_signals.rf_read_b);
 
@@ -92,11 +108,13 @@ impl DataPath {
         let left_in = match cu_signals.alu_src_a {
             AluSrcA::RegisterA => gpr_read_a,
             AluSrcA::Mdr => self.mdr_register.get(),
+            AluSrcA::Ip => self.instruction_pointer.get(),
         };
 
         // MUX RIGHT
         let right_in = match cu_signals.alu_src_b {
             AluSrcB::RegisterB => gpr_read_b,
+            AluSrcB::Mdr => self.mdr_register.get(),
             AluSrcB::Tmp => self.tmp_register.get(),
         };
 
@@ -124,7 +142,9 @@ impl DataPath {
         // MUX MAR
         let new_mar = match cu_signals.mar_src {
             MarSrc::Ip => self.instruction_pointer.get(),
+            MarSrc::IpInc => self.instruction_pointer.get() + 1,
             MarSrc::AluOutput => alu_out_low,
+            MarSrc::IoIrq => IO_IRQ_ADDR,
         };
         self.mar_register.set(new_mar);
         self.mar_register.set_write(cu_signals.mar_write_enable);
@@ -186,8 +206,20 @@ impl DataPath {
         self.instruction_register.get()
     }
 
+    pub fn get_zero_flag(&self) -> bool {
+        self.alu_state_flags[CpuFlags::ZF as usize].get()
+    }
+
+    pub fn get_negative_flag(&self) -> bool {
+        self.alu_state_flags[CpuFlags::NF as usize].get()
+    }
+
     pub fn get_carry_flag(&self) -> bool {
         self.alu_state_flags[CpuFlags::CF as usize].get()
+    }
+
+    pub fn get_overflow_flag(&self) -> bool {
+        self.alu_state_flags[CpuFlags::OF as usize].get()
     }
 
     pub fn get_io_irq(&self) -> bool {
@@ -236,11 +268,6 @@ impl DataPath {
     }
 
     fn alu_compute(&mut self, operation: AluOperation, left_in: u16, right_in: u16) -> (u16, u16) {
-        const ZF: usize = CpuFlags::ZF as usize;
-        const NF: usize = CpuFlags::NF as usize;
-        const CF: usize = CpuFlags::CF as usize;
-        const OF: usize = CpuFlags::OF as usize;
-
         match operation {
             AluOperation::PassLeft => (left_in, 0),
 
@@ -431,6 +458,23 @@ impl DataPath {
                 self.alu_state_flags[CF].set(false);
                 self.alu_state_flags[OF].set(false);
 
+                (0, 0)
+            }
+
+            AluOperation::PassFlags => {
+                let zf: u16 = if self.alu_state_flags[ZF].get() { 1 } else { 0 };
+                let nf: u16 = if self.alu_state_flags[NF].get() { 1 } else { 0 };
+                let cf: u16 = if self.alu_state_flags[CF].get() { 1 } else { 0 };
+                let of: u16 = if self.alu_state_flags[OF].get() { 1 } else { 0 };
+                let val = (zf << 3) | (nf << 2) | (cf << 1) | (of);
+                (val, 0)
+            }
+
+            AluOperation::LoadFlagsLeft => {
+                self.alu_state_flags[ZF].set(left_in >> 3 == 1);
+                self.alu_state_flags[NF].set((left_in >> 2) & 0b1 == 1);
+                self.alu_state_flags[CF].set((left_in >> 1) & 0b1 == 1);
+                self.alu_state_flags[OF].set(left_in & 0b1 == 0);
                 (0, 0)
             }
         }
