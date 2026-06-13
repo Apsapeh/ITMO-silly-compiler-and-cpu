@@ -98,6 +98,8 @@ impl ControlUnit {
     pub fn tick(&mut self, dp: &data_path::DataPath) -> ControlSignals {
         println!("State: {:?}", self.state);
         println!("Step:  {:?}", self.step_counter);
+        println!("IF:  {:?}", self.interruption_flag.get());
+        println!("IB:  {:?}", self.interruption_block.get());
 
         let (cu_signals, new_state) = match self.state {
             CUState::InstructionFetch => match self.step_counter {
@@ -205,6 +207,7 @@ impl ControlUnit {
 
             CUState::Interruption => {
                 let (cu_signals, is_done) = match self.step_counter {
+                    // Push flags onto stack
                     0 => (Self::op_dec_sp(), false),
                     1 => (Self::op_sp_to_mar(), false),
                     2 => (
@@ -215,6 +218,7 @@ impl ControlUnit {
                         },
                         false,
                     ),
+                    // Push IP onto stack
                     3 => (Self::op_dec_sp(), false),
                     4 => (Self::op_sp_to_mar(), false),
                     5 => (
@@ -309,6 +313,7 @@ impl ControlUnit {
                 false,
                 true,
                 false,
+                false,
             ),
 
             (isa::Opcode::Add, _) => Self::op_binary_alu_any(
@@ -318,6 +323,7 @@ impl ControlUnit {
                 false,
                 false,
                 false,
+                true,
             ),
 
             (isa::Opcode::AddC, _) => Self::op_binary_alu_any(
@@ -327,6 +333,7 @@ impl ControlUnit {
                 false,
                 false,
                 false,
+                true,
             ),
 
             (isa::Opcode::Sub, _) => Self::op_binary_alu_any(
@@ -336,6 +343,7 @@ impl ControlUnit {
                 false,
                 false,
                 false,
+                true,
             ),
 
             (isa::Opcode::SubC, _) => Self::op_binary_alu_any(
@@ -345,6 +353,7 @@ impl ControlUnit {
                 false,
                 false,
                 false,
+                true,
             ),
 
             (isa::Opcode::And, _) => Self::op_binary_alu_any(
@@ -354,6 +363,7 @@ impl ControlUnit {
                 false,
                 false,
                 false,
+                true,
             ),
 
             (isa::Opcode::Or, _) => Self::op_binary_alu_any(
@@ -363,6 +373,7 @@ impl ControlUnit {
                 false,
                 false,
                 false,
+                true,
             ),
 
             (isa::Opcode::Xor, _) => Self::op_binary_alu_any(
@@ -372,6 +383,7 @@ impl ControlUnit {
                 false,
                 false,
                 false,
+                true,
             ),
 
             (isa::Opcode::Mul, _) => Self::op_binary_alu_any(
@@ -380,6 +392,7 @@ impl ControlUnit {
                 AluOperation::Mul,
                 false,
                 false,
+                true,
                 true,
             ),
 
@@ -390,24 +403,27 @@ impl ControlUnit {
                 false,
                 false,
                 true,
+                true,
             ),
 
             (isa::Opcode::Cmp, _) => Self::op_binary_alu_any(
                 di,
                 self.step_counter,
-                AluOperation::Cmp,
+                AluOperation::Sub,
                 true,
                 false,
                 false,
+                true,
             ),
 
             (isa::Opcode::Test, _) => Self::op_binary_alu_any(
                 di,
                 self.step_counter,
-                AluOperation::Test,
+                AluOperation::And,
                 true,
                 false,
                 false,
+                true,
             ),
 
             (isa::Opcode::Inc, isa::Mode::RegToReg) => Self::op_unary_rtr(di, AluOperation::Inc),
@@ -447,13 +463,13 @@ impl ControlUnit {
             ),
             (isa::Opcode::Jle, isa::Mode::ImmToReg) => (
                 Self::op_jmp_itr(
-                    dp.get_zero_flag() || dp.get_negative_flag() != dp.get_overflow_flag(),
+                    dp.get_zero_flag() || (dp.get_negative_flag() != dp.get_overflow_flag()),
                 ),
                 true,
             ),
             (isa::Opcode::Jg, isa::Mode::ImmToReg) => (
                 Self::op_jmp_itr(
-                    !dp.get_zero_flag() || dp.get_negative_flag() == dp.get_overflow_flag(),
+                    !dp.get_zero_flag() && (dp.get_negative_flag() == dp.get_overflow_flag()),
                 ),
                 true,
             ),
@@ -462,29 +478,200 @@ impl ControlUnit {
                 true,
             ),
 
-            (isa::Opcode::Call, isa::Mode::ImmToReg) => {
-                unimplemented!()
-            }
+            (isa::Opcode::Call, isa::Mode::ImmToReg) => match self.step_counter {
+                0 => (Self::op_dec_sp(), false),
+                1 => (Self::op_sp_to_mar(), false),
+                2 => (
+                    ControlSignals {
+                        alu_operation: AluOperation::PassLeft,
+                        alu_src_a: AluSrcA::Ip,
+                        mem_write: true,
+                        ..Default::default()
+                    },
+                    false,
+                ),
+                3 => (
+                    ControlSignals {
+                        alu_operation: AluOperation::PassLeft,
+                        alu_src_a: AluSrcA::Mdr,
+                        ip_src: IpSrc::AluOutput,
+                        ip_write_enable: true,
+                        ..Default::default()
+                    },
+                    true,
+                ),
+                _ => unreachable!(),
+            },
 
-            (isa::Opcode::Ret, isa::Mode::RegToReg) => {
-                unimplemented!()
-            }
+            (isa::Opcode::Ret, isa::Mode::RegToReg) => match self.step_counter {
+                0 => (Self::op_sp_to_mar(), false),
+                1 => (Self::op_inc_sp(), false),
+                2 => (
+                    ControlSignals {
+                        mem_read: true,
+                        mdr_write_enable: true,
+                        ..Default::default()
+                    },
+                    false,
+                ),
+                3 => (
+                    ControlSignals {
+                        alu_operation: AluOperation::PassLeft,
+                        alu_src_a: AluSrcA::Mdr,
+                        ip_src: IpSrc::AluOutput,
+                        ip_write_enable: true,
+                        ..Default::default()
+                    },
+                    true,
+                ),
+                _ => unreachable!(),
+            },
 
-            (isa::Opcode::Push, isa::Mode::RegToReg) => {
-                unimplemented!()
-            }
+            (isa::Opcode::Ret, isa::Mode::ImmToReg) => match self.step_counter {
+                0 => (Self::op_sp_to_mar(), false),
+                1 => (Self::op_inc_sp(), false),
+                2 => (
+                    // Mem[SP] -> MDR
+                    // SP - #n (MDR) -> SP  ; Pop args
+                    ControlSignals {
+                        rf_read_a: data_path::GeneralPurposeRegister::SP,
+                        alu_src_a: AluSrcA::RegisterA,
+                        alu_src_b: AluSrcB::Mdr,
+                        alu_operation: AluOperation::Add,
+                        rf_write_dst: data_path::GeneralPurposeRegister::SP,
+                        rf_write_enable: true,
+                        mem_read: true,
+                        mdr_write_enable: true,
+                        ..Default::default()
+                    },
+                    false,
+                ),
+                3 => (
+                    ControlSignals {
+                        alu_operation: AluOperation::PassLeft,
+                        alu_src_a: AluSrcA::Mdr,
+                        ip_src: IpSrc::AluOutput,
+                        ip_write_enable: true,
+                        ..Default::default()
+                    },
+                    true,
+                ),
+                _ => unreachable!(),
+            },
 
-            (isa::Opcode::Pop, isa::Mode::RegToReg) => {
-                unimplemented!()
-            }
+            (isa::Opcode::Push, isa::Mode::RegToReg) => match self.step_counter {
+                0 => (Self::op_dec_sp(), false),
+                1 => (Self::op_sp_to_mar(), false),
+                2 => (
+                    ControlSignals {
+                        rf_read_a: di.rs,
+                        alu_src_a: AluSrcA::RegisterA,
+                        alu_operation: AluOperation::PassLeft,
+                        mem_write: true,
+                        ..Default::default()
+                    },
+                    true,
+                ),
+                _ => unreachable!(),
+            },
 
-            (isa::Opcode::Enter, isa::Mode::ImmToReg) => {
-                unimplemented!()
-            }
+            (isa::Opcode::Pop, isa::Mode::RegToReg) => match self.step_counter {
+                0 => (Self::op_sp_to_mar(), false),
+                1 => (Self::op_inc_sp(), false),
+                2 => (
+                    ControlSignals {
+                        mem_read: true,
+                        mdr_write_enable: true,
+                        ..Default::default()
+                    },
+                    false,
+                ),
+                3 => (
+                    ControlSignals {
+                        alu_operation: AluOperation::PassLeft,
+                        alu_src_a: AluSrcA::Mdr,
+                        rf_write_dst: di.rd,
+                        rf_write_enable: true,
+                        ..Default::default()
+                    },
+                    true,
+                ),
+                _ => unreachable!(),
+            },
 
-            (isa::Opcode::Leave, isa::Mode::RegToReg) => {
-                unimplemented!()
-            }
+            (isa::Opcode::Enter, isa::Mode::ImmToReg) => match self.step_counter {
+                0 => (Self::op_dec_sp(), false),
+                1 => (Self::op_sp_to_mar(), false),
+                2 => (
+                    ControlSignals {
+                        rf_read_a: data_path::GeneralPurposeRegister::BP,
+                        alu_src_a: AluSrcA::RegisterA,
+                        alu_operation: AluOperation::PassLeft,
+                        mem_write: true,
+                        ..Default::default()
+                    },
+                    false,
+                ),
+                3 => (
+                    ControlSignals {
+                        rf_read_a: data_path::GeneralPurposeRegister::SP,
+                        alu_src_a: AluSrcA::RegisterA,
+                        alu_operation: AluOperation::PassLeft,
+                        rf_write_dst: data_path::GeneralPurposeRegister::BP,
+                        rf_write_enable: true,
+                        ..Default::default()
+                    },
+                    false,
+                ),
+                4 => (
+                    ControlSignals {
+                        rf_read_a: data_path::GeneralPurposeRegister::SP,
+                        alu_src_a: AluSrcA::RegisterA,
+                        alu_src_b: AluSrcB::Mdr,
+                        alu_operation: AluOperation::Sub,
+                        rf_write_dst: data_path::GeneralPurposeRegister::SP,
+                        rf_write_enable: true,
+                        ..Default::default()
+                    },
+                    true,
+                ),
+                _ => unreachable!(),
+            },
+
+            (isa::Opcode::Leave, isa::Mode::RegToReg) => match self.step_counter {
+                0 => (
+                    ControlSignals {
+                        rf_read_a: data_path::GeneralPurposeRegister::BP,
+                        alu_src_a: AluSrcA::RegisterA,
+                        alu_operation: AluOperation::PassLeft,
+                        rf_write_dst: data_path::GeneralPurposeRegister::SP,
+                        rf_write_enable: true,
+                        ..Default::default()
+                    },
+                    false,
+                ),
+                1 => (Self::op_sp_to_mar(), false),
+                2 => (Self::op_inc_sp(), false),
+                3 => (
+                    ControlSignals {
+                        mem_read: true,
+                        mdr_write_enable: true,
+                        ..Default::default()
+                    },
+                    false,
+                ),
+                4 => (
+                    ControlSignals {
+                        alu_operation: AluOperation::PassLeft,
+                        alu_src_a: AluSrcA::Mdr,
+                        rf_write_dst: data_path::GeneralPurposeRegister::BP,
+                        rf_write_enable: true,
+                        ..Default::default()
+                    },
+                    true,
+                ),
+                _ => unreachable!(),
+            },
 
             (isa::Opcode::Iret, isa::Mode::RegToReg) => match self.step_counter {
                 // Pop IP
@@ -552,6 +739,7 @@ impl ControlUnit {
         disable_mem_or_rf_write: bool,
         skip_mem_read: bool,
         pair_mode: bool,
+        write_flags: bool,
     ) -> (ControlSignals, bool) {
         let mut cs = ControlSignals::default();
 
@@ -859,21 +1047,25 @@ impl ControlUnit {
             },
         };
 
-        // Tmp and Cmp hack
-        if disable_mem_or_rf_write {
-            cs.mem_write = false;
-            cs.rf_write_enable = false;
-        }
-
-        // Mul and Div hack
-        if pair_mode {
-            cs.rf_write_pair_mode = true;
-        }
-
         if is_done {
             cs.alu_operation = alu_op;
             cs.mar_src = MarSrc::Ip;
             cs.mar_write_enable = true;
+
+            // Tmp and Cmp hack
+            if disable_mem_or_rf_write {
+                cs.mem_write = false;
+                cs.rf_write_enable = false;
+            }
+
+            // Mul and Div hack
+            if pair_mode {
+                cs.rf_write_pair_mode = true;
+            }
+
+            if write_flags {
+                cs.alu_flags_write_enable = true;
+            }
         }
 
         (cs, is_done)

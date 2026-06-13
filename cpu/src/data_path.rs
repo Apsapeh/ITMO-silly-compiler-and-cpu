@@ -100,8 +100,19 @@ impl DataPath {
             println!("MDR: {}", self.mdr_register.get());
             println!("TMP: {}", self.tmp_register.get());
             println!(
-                "SP:  {}",
-                self.register_file[GeneralPurposeRegister::SP as usize].get()
+                "AL: {}, AH: {}\nBL: {}, BH: {}\n SP:  {}",
+                self.register_file[GeneralPurposeRegister::AL as usize].get(),
+                self.register_file[GeneralPurposeRegister::AH as usize].get(),
+                self.register_file[GeneralPurposeRegister::BL as usize].get(),
+                self.register_file[GeneralPurposeRegister::BH as usize].get(),
+                self.register_file[GeneralPurposeRegister::SP as usize].get(),
+            );
+            println!(
+                "Z: {:?}, N: {:?}, C: {:?}, O: {:?}",
+                self.alu_state_flags[ZF].get(),
+                self.alu_state_flags[NF].get(),
+                self.alu_state_flags[CF].get(),
+                self.alu_state_flags[OF].get()
             );
             println!("Mem[8190]: {}", self.memory[8190]);
             println!("Mem[8191]: {}", self.memory[8191]);
