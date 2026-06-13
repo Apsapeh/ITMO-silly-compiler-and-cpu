@@ -97,18 +97,36 @@ impl ControlUnit {
 
     pub fn tick(&mut self, dp: &data_path::DataPath) -> ControlSignals {
         println!("State: {:?}", self.state);
+        println!("Step:  {:?}", self.step_counter);
 
         let (cu_signals, new_state) = match self.state {
-            CUState::InstructionFetch => (
-                ControlSignals {
-                    ir_write_enable: true,
-                    ip_src: IpSrc::Increment,
-                    ip_write_enable: true,
-                    mem_read: true,
-                    ..Default::default()
-                },
-                CUState::InstructionAnalyze,
-            ),
+            CUState::InstructionFetch => match self.step_counter {
+                0 => {
+                    self.step_counter += 1;
+                    (
+                        ControlSignals {
+                            mar_src: MarSrc::Ip,
+                            mar_write_enable: true,
+                            ..Default::default()
+                        },
+                        CUState::InstructionFetch,
+                    )
+                }
+                1 => {
+                    self.step_counter = 0;
+                    (
+                        ControlSignals {
+                            ir_write_enable: true,
+                            ip_src: IpSrc::Increment,
+                            ip_write_enable: true,
+                            mem_read: true,
+                            ..Default::default()
+                        },
+                        CUState::InstructionAnalyze,
+                    )
+                }
+                _ => unreachable!(),
+            },
 
             CUState::InstructionAnalyze => {
                 let di = DecodedInstruction::from_raw(dp.get_instruction_register());
@@ -155,7 +173,7 @@ impl ControlUnit {
                     ip_src: IpSrc::Increment,
                     ip_write_enable: true,
                     mdr_write_enable: true,
-                    mar_src: MarSrc::Ip,
+                    mar_src: MarSrc::IpInc,
                     tmp_write_enable: true,
                     mar_write_enable: true,
                     mem_read: true,
@@ -186,7 +204,6 @@ impl ControlUnit {
             }
 
             CUState::Interruption => {
-                println!("Int step: {}", self.step_counter);
                 let (cu_signals, is_done) = match self.step_counter {
                     0 => (Self::op_dec_sp(), false),
                     1 => (Self::op_sp_to_mar(), false),
@@ -469,9 +486,50 @@ impl ControlUnit {
                 unimplemented!()
             }
 
-            (isa::Opcode::Iret, isa::Mode::RegToReg) => {
-                unimplemented!()
-            }
+            (isa::Opcode::Iret, isa::Mode::RegToReg) => match self.step_counter {
+                // Pop IP
+                0 => (Self::op_sp_to_mar(), false),
+                1 => {
+                    let mut cu = Self::op_inc_sp();
+                    cu.mem_read = true;
+                    cu.mdr_write_enable = true;
+                    (cu, false)
+                }
+                2 => (
+                    ControlSignals {
+                        alu_operation: AluOperation::PassLeft,
+                        alu_src_a: AluSrcA::Mdr,
+                        ip_src: IpSrc::AluOutput,
+                        ip_write_enable: true,
+                        mar_src: MarSrc::AluOutput,
+                        mar_write_enable: true,
+                        ..Default::default()
+                    },
+                    false,
+                ),
+                // Pop flags
+                3 => (Self::op_sp_to_mar(), false),
+                4 => {
+                    let mut cu = Self::op_inc_sp();
+                    cu.mem_read = true;
+                    cu.mdr_write_enable = true;
+                    (cu, false)
+                }
+                5 => {
+                    self.interruption_block.set(false);
+                    self.interruption_block.set_write(true);
+
+                    (
+                        ControlSignals {
+                            alu_operation: AluOperation::LoadFlagsLeft,
+                            alu_flags_write_enable: true,
+                            ..Default::default()
+                        },
+                        true,
+                    )
+                }
+                _ => unreachable!(),
+            },
 
             (isa::Opcode::Sti, isa::Mode::RegToReg) => {
                 (Self::op_set_if(true, &mut self.interruption_flag), true)
@@ -894,10 +952,23 @@ impl ControlUnit {
         }
     }
 
+    fn op_inc_sp() -> ControlSignals {
+        ControlSignals {
+            rf_read_a: data_path::GeneralPurposeRegister::SP,
+            rf_write_dst: data_path::GeneralPurposeRegister::SP,
+            rf_write_enable: true,
+            alu_src_a: AluSrcA::RegisterA,
+            alu_operation: AluOperation::Inc,
+
+            ..Default::default()
+        }
+    }
+
     fn op_sp_to_mar() -> ControlSignals {
         ControlSignals {
             rf_read_a: data_path::GeneralPurposeRegister::SP,
             mar_src: MarSrc::AluOutput,
+            mar_write_enable: true,
             alu_src_a: AluSrcA::RegisterA,
             alu_operation: AluOperation::PassLeft,
             ..Default::default()
@@ -918,7 +989,7 @@ impl DecodedInstruction {
         Self {
             opcode: isa::Opcode::from_raw((raw >> 10) as u8).expect("Unexpected opcode!"),
             mode: isa::Mode::from_raw(((raw >> 6) & 0b1111) as u8).expect("Unexpected mode!"),
-            rd: Self::raw_isa_reg_to_alu_reg(((raw >> 2) & 0b111) as u8),
+            rd: Self::raw_isa_reg_to_alu_reg(((raw >> 3) & 0b111) as u8),
             rs: Self::raw_isa_reg_to_alu_reg(((raw) & 0b111) as u8),
         }
     }

@@ -95,10 +95,16 @@ impl DataPath {
     pub fn tick(&mut self, cu_signals: control_unit::ControlSignals) {
         if true {
             println!("Signals: {:#?}", cu_signals);
-            println!("IP: {}", self.instruction_pointer.get());
+            println!("IP:  {}", self.instruction_pointer.get());
             println!("MAR: {}", self.mar_register.get());
             println!("MDR: {}", self.mdr_register.get());
             println!("TMP: {}", self.tmp_register.get());
+            println!(
+                "SP:  {}",
+                self.register_file[GeneralPurposeRegister::SP as usize].get()
+            );
+            println!("Mem[8190]: {}", self.memory[8190]);
+            println!("Mem[8191]: {}", self.memory[8191]);
         }
 
         let gpr_read_a = self.register_file_get_register(cu_signals.rf_read_a);

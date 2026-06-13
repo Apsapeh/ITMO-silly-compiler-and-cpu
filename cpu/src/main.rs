@@ -16,10 +16,16 @@ fn load_io_irq_test(memory: &mut [u16; 0x10000]) {
     use isa::Mode::*;
     use isa::Opcode::*;
 
-    let loop_addr = 0x0001u16;
+    let loop_addr = 0x0003u16;
     memory[0x0000] = encode_insn(isa::Opcode::Sti, isa::Mode::RegToReg, 0, 0);
-    memory[loop_addr as usize] = encode_insn(isa::Opcode::Jmp, isa::Mode::ImmToReg, 0, 0);
-    memory[loop_addr as usize + 1] = loop_addr;
+    memory[0x0001] = encode_insn(Mov, ImmToReg, isa::Register::SP as u8, 0);
+    memory[0x0002] = 0x2000;
+    memory[0x0003] = encode_insn(Mov, ImmToMema, 0, 0);
+    memory[0x0004] = IO_WRITE_PORT;
+    memory[0x0005] = 123;
+    memory[0x0006] = encode_insn(isa::Opcode::Jmp, isa::Mode::ImmToReg, 0, 0);
+    memory[0x0007] = loop_addr;
+    memory[0x0008] = encode_insn(Hlt, RegToReg, 0, 0);
 
     memory[data_path::IO_IRQ_ADDR as usize] = 0x0100;
 
@@ -28,7 +34,7 @@ fn load_io_irq_test(memory: &mut [u16; 0x10000]) {
     memory[0x0102] = encode_insn(isa::Opcode::Add, isa::Mode::RegToReg, 0, 0);
     memory[0x0103] = encode_insn(isa::Opcode::Mov, isa::Mode::RegToMema, 0, 0);
     memory[0x0104] = IO_WRITE_PORT;
-    memory[0x0105] = encode_insn(Hlt, RegToReg, 0, 0);
+    memory[0x0105] = encode_insn(Iret, RegToReg, 0, 0);
     // memory[0x0105] = encode_insn(isa::Opcode::Iret, isa::Mode::RegToReg, 0, 0);
 }
 
@@ -50,16 +56,17 @@ fn main() {
     load_io_irq_test(&mut memory);
     // load_add_test(&mut memory);
     //
-    println!("Mem[0x1000..0x1004]: {:#?}", &memory[0x0..0x110]);
+    println!("Mem[0x1000..0x1010]: {:?}", &memory[0x0..0x110]);
+    println!("Mem[0x1FF0..0x2010]: {:?}", &memory[0x1FF0..0x2010]);
 
     let mut cu = control_unit::ControlUnit::new();
     let mut dp = data_path::DataPath::new(memory);
 
     let mut tick = 0u64;
-    let max_ticks = 50;
+    let max_ticks = 470;
 
     while tick < max_ticks && !cu.get_is_halted() {
-        if tick == 10 {
+        if tick % 10 == 0 {
             dp.set_io_read_buffer(IO_INPUT_VALUE);
         }
         println!("\nTick {}", tick);
@@ -73,6 +80,7 @@ fn main() {
 
     let new_memory = dp.get_memory();
     println!("Mem[0x1000..0x1004]: {:?}", &new_memory[0x0..0x110]);
+    println!("Mem[0x1FF0..0x2010]: {:?}", &new_memory[0x1FF0..0x2010]);
 
     let output = dp.get_io_write_data();
 
