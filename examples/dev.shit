@@ -1,7 +1,9 @@
-! WORD - 32 bit
-! DWORD - 64 bit
+! WORD - 16 bit
+! DWORD - 32 bit
 ! [<N>]<T> - allocate N element of T and store pointer. If N == 0 or empty, it's just pointer
 !    = ~ > < ] [    + - * / %
+
+VARIABLE GLOBAL_COUNTER WORD
 
 FUNCTION FACTORIAL N WORD RETURN WORD
   IF  N LTEQ 1  OR  N GTEQ CALL GREATER (10, -10)

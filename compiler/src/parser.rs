@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use crate::error::error;
 use crate::protolexer;
 
@@ -180,6 +178,14 @@ impl VarType {
         }
     }
 
+    pub fn get_size_in_words(&self) -> u16 {
+        match self {
+            Self::Word => 1,
+            Self::DWord => 2,
+            Self::Ptr { vtype, size } => vtype.get_size_in_words() * (*size as u16 + 1),
+        }
+    }
+
     pub fn to_termtree(&self) -> termtree::Tree<String> {
         let (root_str, leaves) = match self {
             Self::Word => ("WORD", vec![]),
@@ -211,8 +217,9 @@ pub fn parse(lines: Vec<protolexer::SourceLineWords>) -> Vec<ASTNode> {
         let node = match line.words[0].as_str() {
             "FUNCTION" => parse_function(&mut iter),
             "PROCEDURE" => parse_procedure(&mut iter),
+            "VARIABLE" => parse_variable(&mut iter),
             _ => error(
-                "Syntax error - unexpected construction. Only PROCEDURE and FUNCTION allowed at zero level",
+                "Syntax error - unexpected construction. Only PROCEDURE, FUNCTION or VARIABLE allowed at zero level",
                 &line.source_line,
             ),
         };
