@@ -13,13 +13,6 @@ pub enum ASTNode {
         block: Box<ASTNode>,
     },
 
-    Function {
-        name: String,
-        args: Vec<Argument>,
-        rtype: VarType,
-        block: Box<ASTNode>,
-    },
-
     If {
         expr: Expression,
         block: Box<ASTNode>,
@@ -30,7 +23,10 @@ pub enum ASTNode {
         block: Box<ASTNode>,
     },
 
-    FnCall(FnCall),
+    FnCall {
+        name: String,
+        args: Vec<Expression>,
+    },
 
     Variable {
         name: String,
@@ -42,9 +38,7 @@ pub enum ASTNode {
         expr: Expression,
     },
 
-    Return {
-        expr: Option<Expression>,
-    },
+    Return,
 
     Stop,
 }
@@ -71,22 +65,6 @@ impl ASTNode {
                 (format!("Procedure ({})", name), vec![tree_args, body])
             }
 
-            Self::Function {
-                name,
-                args,
-                rtype,
-                block,
-            } => {
-                let mut tree_args = termtree::Tree::new("Args".to_string());
-                args.iter().for_each(|a| {
-                    tree_args.push(a.to_termtree());
-                });
-                let body = block.to_termtree();
-                let mut rtype = rtype.to_termtree();
-                rtype.root.insert_str(0, "Return ");
-                (format!("Function ({})", name), vec![tree_args, rtype, body])
-            }
-
             Self::If {
                 expr,
                 block,
@@ -107,9 +85,12 @@ impl ASTNode {
 
             Self::Loop { block } => ("Loop".to_string(), vec![block.to_termtree()]),
 
-            Self::FnCall(f) => {
-                let t = f.to_termtree();
-                (t.root, t.leaves)
+            Self::FnCall { name, args } => {
+                let mut v = vec![];
+                args.iter().for_each(|a| {
+                    v.push(a.to_termtree());
+                });
+                (format!("Call ({})", name.clone()), v)
             }
 
             Self::Variable { name, vtype } => {
@@ -122,14 +103,7 @@ impl ASTNode {
                 ("Set".to_string(), vec![var.to_termtree(), expr_t])
             }
 
-            Self::Return { expr } => {
-                let expr = if let Some(e) = expr {
-                    vec![e.to_termtree()]
-                } else {
-                    vec![]
-                };
-                ("Return".to_string(), expr)
-            }
+            Self::Return => ("Return".to_string(), vec![]),
 
             Self::Stop => ("Stop".to_string(), vec![]),
             _ => ("".to_string(), vec![]),
@@ -215,11 +189,10 @@ pub fn parse(lines: Vec<protolexer::SourceLineWords>) -> Vec<ASTNode> {
     let mut iter = lines.iter().peekable();
     while let Some(line) = iter.peek() {
         let node = match line.words[0].as_str() {
-            "FUNCTION" => parse_function(&mut iter),
             "PROCEDURE" => parse_procedure(&mut iter),
             "VARIABLE" => parse_variable(&mut iter),
             _ => error(
-                "Syntax error - unexpected construction. Only PROCEDURE, FUNCTION or VARIABLE allowed at zero level",
+                "Syntax error - unexpected construction. Only PROCEDURE or VARIABLE allowed at zero level",
                 &line.source_line,
             ),
         };
@@ -289,33 +262,11 @@ fn try_get_word(
 }
 
 /* =============================> Zero level Syntax parsers <==================================== */
-
-fn parse_function(iter: &mut LinesIter) -> SubParserResult {
-    let line = iter.next().unwrap();
-    let words = &line.words;
-
-    let name = try_get_word(1, line, "Syntax error - name of the function not found")?;
-
-    let return_idx = words.iter().position(|w| w == "RETURN").unwrap();
-    let args = Argument::from_raw_vec(&words[2..return_idx])?;
-
-    let rtype = VarType::from_raw(&words[return_idx + 1..])?;
-
-    let block = parse_block(iter, line.source_line.power)?;
-
-    Ok(ASTNode::Function {
-        name,
-        args,
-        rtype,
-        block: Box::new(block),
-    })
-}
-
 fn parse_procedure(iter: &mut LinesIter) -> SubParserResult {
     let line = iter.next().unwrap();
     let words = &line.words;
 
-    let name = try_get_word(1, line, "Syntax error - name of the function not found")?;
+    let name = try_get_word(1, line, "Syntax error - name of the procedure not found")?;
 
     let args = Argument::from_raw_vec(&words[2..])?;
 
@@ -365,7 +316,40 @@ fn parse_loop(iter: &mut LinesIter) -> SubParserResult {
 fn parse_fn_call(iter: &mut LinesIter) -> SubParserResult {
     let line = iter.next().unwrap();
     let words = &line.words;
-    Ok(ASTNode::FnCall(FnCall::from_raw(&words[1..])?))
+    let mut words_iter = (&words[1..]).iter().peekable();
+
+    let name = match words_iter.next() {
+        Some(n) => n,
+        None => {
+            return Err(String::from("Syntax error - function name not found"));
+        }
+    };
+
+    let mut args = vec![];
+    if words_iter.peek().is_some() {
+        loop {
+            let arg = Expression::iter_parse(&mut words_iter, &[","])?;
+            args.push(arg);
+
+            let sep = match words_iter.next() {
+                Some(s) => s,
+                None => break,
+            };
+
+            match sep.as_str() {
+                "," => {
+                    continue;
+                }
+                _ => return Err(format!("Syntax error - unexpected sumbol '{}'", sep)),
+            }
+        }
+    }
+
+    // Ok(ASTNode::FnCall(FnCall::from_raw(&words[1..])?))
+    Ok(ASTNode::FnCall {
+        name: name.clone(),
+        args,
+    })
 }
 
 fn parse_variable(iter: &mut LinesIter) -> SubParserResult {
@@ -399,17 +383,8 @@ fn parse_variable_set(iter: &mut LinesIter) -> SubParserResult {
 }
 
 fn parse_return(iter: &mut LinesIter) -> SubParserResult {
-    let line = iter.next().unwrap();
-    let words = &line.words;
-    let mut expr_iter = words.iter().peekable();
-    expr_iter.next(); // Skip "RETURN"
-
-    let expr = match expr_iter.peek() {
-        Some(_) => Some(Expression::iter_parse(&mut expr_iter, &[])?),
-        None => None,
-    };
-
-    Ok(ASTNode::Return { expr })
+    iter.next();
+    Ok(ASTNode::Return)
 }
 
 fn parse_stop(iter: &mut LinesIter) -> SubParserResult {
@@ -482,7 +457,6 @@ pub enum Expression {
     Number(i32),
     CString(usize),
     Variable(VariableUse),
-    FnCall(FnCall),
     Expr(Box<Self>),
     BinaryOp {
         op: Operator,
@@ -510,9 +484,7 @@ impl Expression {
             // Consume word
             iter.next();
 
-            let unit = if word == "CALL" {
-                ExprUnit::Operand(Self::FnCall(FnCall::iter_parse(iter)?))
-            } else if word == "[" {
+            let unit = if word == "[" {
                 ExprUnit::Operand(Self::Variable(VariableUse::iter_parse_arr_deref(iter)?))
             } else if word == "(" {
                 let u =
@@ -602,7 +574,6 @@ impl Expression {
             Self::Number(n) => termtree::Tree::new(format!("Number: {}", n)),
             Self::CString(c) => termtree::Tree::new(format!("String: {}", c)),
             Self::Variable(v) => v.to_termtree(),
-            Self::FnCall(f) => f.to_termtree(),
             Self::Expr(e) => e.to_termtree(),
             Self::BinaryOp { op, left, right } => {
                 let mut op = op.to_termtree();
@@ -649,71 +620,6 @@ impl Argument {
     pub fn to_termtree(&self) -> termtree::Tree<String> {
         let mut root = termtree::Tree::new(self.name.clone());
         root.push(self.vtype.to_termtree());
-        root
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct FnCall {
-    name: String,
-    args: Vec<Expression>,
-}
-
-impl FnCall {
-    pub fn iter_parse(iter: &mut WordsIter) -> Result<Self, String> {
-        let name = match iter.next() {
-            Some(n) => n,
-            None => {
-                return Err(String::from("Syntax error - function name not found"));
-            }
-        };
-
-        let mut args = vec![];
-        if let Some(&rnd_beg) = iter.peek()
-            && rnd_beg == "("
-        {
-            iter.next();
-            loop {
-                let arg = Expression::iter_parse(iter, &[",", ")"])?;
-                args.push(arg);
-
-                let sep = match iter.next() {
-                    Some(s) => s,
-                    None => {
-                        return Err(String::from(
-                            "Syntax error - unexpected end of line. Function call isn't closed",
-                        ));
-                    }
-                };
-
-                match sep.as_str() {
-                    "," => {
-                        continue;
-                    }
-                    ")" => {
-                        break;
-                    }
-                    _ => return Err(format!("Syntax error - unexpected sumbol '{}'", sep)),
-                }
-            }
-        }
-
-        Ok(Self {
-            name: name.clone(),
-            args,
-        })
-    }
-
-    pub fn from_raw(raw: &[String]) -> Result<Self, String> {
-        let mut iter = raw.iter().peekable();
-        Self::iter_parse(&mut iter)
-    }
-
-    pub fn to_termtree(&self) -> termtree::Tree<String> {
-        let mut root = termtree::Tree::new(format!("Call ({})", self.name.clone()));
-        self.args.iter().for_each(|a| {
-            root.push(a.to_termtree());
-        });
         root
     }
 }

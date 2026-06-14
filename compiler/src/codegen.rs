@@ -60,7 +60,7 @@ impl Codegen {
                     self.gen_stop();
                 }
 
-                ASTNode::Block { .. } | ASTNode::Procedure { .. } | ASTNode::Function { .. } => {
+                ASTNode::Block { .. } | ASTNode::Procedure { .. } => {
                     unreachable!()
                 }
 
