@@ -1,5 +1,8 @@
-#[derive(Clone, Copy, Default, Debug)]
+use strum::{Display, EnumString};
+
+#[derive(Clone, Copy, Default, Debug, EnumString, Display)]
 #[repr(u8)]
+#[strum(serialize_all = "lowercase")]
 pub enum Opcode {
     #[default]
     Nop = 0u8,
@@ -54,10 +57,16 @@ impl Opcode {
             None
         }
     }
+
+    pub fn frow_raw_str(raw: &str) -> Option<Self> {
+        let normalized = raw.to_lowercase().replace('_', "");
+        normalized.parse().ok()
+    }
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, EnumString, Display)]
 #[repr(u8)]
+#[strum(serialize_all = "lowercase")]
 pub enum Mode {
     #[default]
     RegToReg = 0x0u8,
@@ -81,10 +90,16 @@ impl Mode {
             None
         }
     }
+
+    pub fn frow_raw_str(raw: &str) -> Option<Self> {
+        let normalized = raw.to_lowercase().replace('_', "");
+        normalized.parse().ok()
+    }
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, EnumString, Display)]
 #[repr(u8)]
+#[strum(serialize_all = "lowercase")]
 pub enum Register {
     #[default]
     AL = 0x0u8,
@@ -104,5 +119,10 @@ impl Register {
         } else {
             None
         }
+    }
+
+    pub fn frow_raw_str(raw: &str) -> Option<Self> {
+        let normalized = raw.to_lowercase().replace('_', "");
+        normalized.parse().ok()
     }
 }

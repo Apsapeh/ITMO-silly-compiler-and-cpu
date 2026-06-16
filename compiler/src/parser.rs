@@ -9,7 +9,7 @@ pub enum ASTNode {
 
     Procedure {
         name: String,
-        args: Vec<Argument>,
+        args: Vec<String>,
         block: Box<ASTNode>,
     },
 
@@ -59,7 +59,7 @@ impl ASTNode {
             Self::Procedure { name, args, block } => {
                 let mut tree_args = termtree::Tree::new("Args".to_string());
                 args.iter().for_each(|a| {
-                    tree_args.push(a.to_termtree());
+                    tree_args.push(termtree::Tree::new(a.clone()));
                 });
                 let body = block.to_termtree();
                 (format!("Procedure ({})", name), vec![tree_args, body])
@@ -106,7 +106,6 @@ impl ASTNode {
             Self::Return => ("Return".to_string(), vec![]),
 
             Self::Stop => ("Stop".to_string(), vec![]),
-            _ => ("".to_string(), vec![]),
         };
 
         let mut root = termtree::Tree::new(root_str);
@@ -120,63 +119,27 @@ impl ASTNode {
 
 #[derive(Debug, Clone)]
 pub enum VarType {
-    Word,  // 16 bit
-    DWord, // 32 bit
-    Ptr { vtype: Box<VarType>, size: u32 },
+    Word, // 16 bit
+    Array(u16),
 }
 
 impl VarType {
-    pub fn from_raw(raw: &[String]) -> Result<Self, String> {
-        // Just type
-        if raw.len() == 1 {
-            match raw[0].as_str() {
-                "WORD" => Ok(Self::Word),
-                "DWORD" => Ok(Self::DWord),
-                _ => Err(format!("Syntax error - Unknown type '{}'", raw.join(" "))),
-            }
-        } else {
-            // []Type - Pointer
-            let (vtype, size) = if raw.len() == 3 && raw[0] == "[" && raw[1] == "]" {
-                (Self::from_raw(&raw[2..])?, 0)
-            // [N]Type - Array
-            } else if raw.len() == 4 && raw[0] == "[" && raw[2] == "]" {
-                (Self::from_raw(&raw[3..])?, raw[1].parse::<u32>().unwrap())
-            } else {
-                return Err(format!("Syntax error - Unknown type '{}'", raw.join(" ")));
-            };
-
-            Ok(Self::Ptr {
-                vtype: Box::new(vtype),
-                size,
-            })
-        }
-    }
-
     pub fn get_size_in_words(&self) -> u16 {
         match self {
             Self::Word => 1,
-            Self::DWord => 2,
-            Self::Ptr { vtype, size } => vtype.get_size_in_words() * (*size as u16 + 1),
+            Self::Array(size) => {
+                // Ptr (Word) + Data
+                1 + size
+            }
         }
     }
 
     pub fn to_termtree(&self) -> termtree::Tree<String> {
-        let (root_str, leaves) = match self {
-            Self::Word => ("WORD", vec![]),
-            Self::DWord => ("DWORD", vec![]),
-            Self::Ptr { vtype, size } => {
-                let vtype = vtype.to_termtree();
-                let size = termtree::Tree::new(format!("Size: {}", size));
-                ("PTR", vec![vtype, size])
-            }
+        let root_str = match self {
+            Self::Word => "WORD".to_string(),
+            Self::Array(size) => format!("ARRAY ({})", size),
         };
-
-        let mut root = termtree::Tree::new(format!("Type: {}", root_str));
-        for leave in leaves {
-            root.push(leave);
-        }
-
-        root
+        termtree::Tree::new(format!("Type: {}", root_str))
     }
 }
 
@@ -191,8 +154,9 @@ pub fn parse(lines: Vec<protolexer::SourceLineWords>) -> Vec<ASTNode> {
         let node = match line.words[0].as_str() {
             "PROCEDURE" => parse_procedure(&mut iter),
             "VARIABLE" => parse_variable(&mut iter),
+            "ARRAY" => parse_array(&mut iter),
             _ => error(
-                "Syntax error - unexpected construction. Only PROCEDURE or VARIABLE allowed at zero level",
+                "Syntax error - unexpected construction. Only PROCEDURE, VARIABLE or ARRAY are allowed at zero level",
                 &line.source_line,
             ),
         };
@@ -238,6 +202,7 @@ fn parse_block(iter: &mut LinesIter, exit_depth: usize) -> SubParserResult {
             "IF"       => parse_if(iter),
             "LOOP"     => parse_loop(iter),
             "VARIABLE" => parse_variable(iter),
+            "ARRAY" => parse_array(iter),
             "CALL"     => parse_fn_call(iter),
             "STOP"     => parse_stop(iter),
             "RETURN"   => parse_return(iter),
@@ -268,7 +233,7 @@ fn parse_procedure(iter: &mut LinesIter) -> SubParserResult {
 
     let name = try_get_word(1, line, "Syntax error - name of the procedure not found")?;
 
-    let args = Argument::from_raw_vec(&words[2..])?;
+    let args = Vec::from(&words[2..]);
 
     let block = parse_block(iter, line.source_line.power)?;
 
@@ -316,7 +281,7 @@ fn parse_loop(iter: &mut LinesIter) -> SubParserResult {
 fn parse_fn_call(iter: &mut LinesIter) -> SubParserResult {
     let line = iter.next().unwrap();
     let words = &line.words;
-    let mut words_iter = (&words[1..]).iter().peekable();
+    let mut words_iter = (words[1..]).iter().peekable();
 
     let name = match words_iter.next() {
         Some(n) => n,
@@ -353,10 +318,36 @@ fn parse_fn_call(iter: &mut LinesIter) -> SubParserResult {
 }
 
 fn parse_variable(iter: &mut LinesIter) -> SubParserResult {
-    let arg = Argument::from_raw(&iter.next().unwrap().words[1..])?;
+    let line = iter.next().unwrap();
+    let name = try_get_word(1, line, "Syntax error - name of the variable not found")?;
     Ok(ASTNode::Variable {
-        name: arg.name,
-        vtype: arg.vtype,
+        name,
+        vtype: VarType::Word,
+    })
+}
+
+fn parse_array(iter: &mut LinesIter) -> SubParserResult {
+    let line = iter.next().unwrap();
+
+    let name = try_get_word(1, line, "Syntax error - name of the array not found")?;
+    let size = try_get_word(2, line, "Syntax error - name of the array not found")?;
+    let size = match size.parse::<u16>() {
+        Ok(n) => n,
+        Err(e) => {
+            return Err(format!(
+                "Syntax error - array size parsing error. It must be unsigned number\n{}",
+                e
+            ));
+        }
+    };
+
+    if size == 0 {
+        return Err("Error - array size must be greater than zero".to_string());
+    }
+
+    Ok(ASTNode::Variable {
+        name,
+        vtype: VarType::Array(size),
     })
 }
 
@@ -457,6 +448,7 @@ pub enum Expression {
     Number(i32),
     CString(usize),
     Variable(VariableUse),
+    VariableAddr(String),
     Expr(Box<Self>),
     BinaryOp {
         op: Operator,
@@ -484,7 +476,13 @@ impl Expression {
             // Consume word
             iter.next();
 
-            let unit = if word == "[" {
+            let unit = if word == "REF" {
+                ExprUnit::Operand(Self::VariableAddr(
+                    iter.next()
+                        .expect("Variable name to ref not specified")
+                        .clone(),
+                ))
+            } else if word == "[" {
                 ExprUnit::Operand(Self::Variable(VariableUse::iter_parse_arr_deref(iter)?))
             } else if word == "(" {
                 let u =
@@ -574,6 +572,7 @@ impl Expression {
             Self::Number(n) => termtree::Tree::new(format!("Number: {}", n)),
             Self::CString(c) => termtree::Tree::new(format!("String: {}", c)),
             Self::Variable(v) => v.to_termtree(),
+            Self::VariableAddr(va) => termtree::Tree::new(format!("Address of Var: {}", va)),
             Self::Expr(e) => e.to_termtree(),
             Self::BinaryOp { op, left, right } => {
                 let mut op = op.to_termtree();
@@ -586,43 +585,6 @@ impl Expression {
 }
 
 /* ===============================> Other (shared) parsers and types <============================== */
-
-#[derive(Debug, Clone)]
-pub struct Argument {
-    name: String,
-    vtype: VarType,
-}
-
-impl Argument {
-    // Var decl or func/proc decl
-    // N WORD
-    // N [3]WORD
-    pub fn from_raw(raw: &[String]) -> Result<Self, String> {
-        let name = match raw.first() {
-            Some(n) => n.clone(),
-            None => {
-                return Err(String::from("Syntax error - variable name not found"));
-            }
-        };
-
-        let vtype = VarType::from_raw(&raw[1..raw.len()])?;
-
-        Ok(Self { name, vtype })
-    }
-
-    pub fn from_raw_vec(raw: &[String]) -> Result<Vec<Self>, String> {
-        if raw.is_empty() {
-            return Ok(vec![]);
-        }
-        raw.split(|w| w == ",").map(Self::from_raw).collect()
-    }
-
-    pub fn to_termtree(&self) -> termtree::Tree<String> {
-        let mut root = termtree::Tree::new(self.name.clone());
-        root.push(self.vtype.to_termtree());
-        root
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct VariableUse {
@@ -659,7 +621,7 @@ impl VariableUse {
     pub fn to_termtree(&self) -> termtree::Tree<String> {
         let mut root = termtree::Tree::new(format!("Variable: {}", self.name));
         if let Some(of) = &self.deref_offset {
-            let mut r = termtree::Tree::new(format!("Deref offset"));
+            let mut r = termtree::Tree::new("Deref offset".to_string());
             r.push(of.to_termtree());
             root.push(r);
         }

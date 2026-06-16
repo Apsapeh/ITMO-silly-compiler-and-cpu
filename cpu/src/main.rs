@@ -217,24 +217,45 @@ fn load_factorial_interrupt_driven(memory: &mut [u16; 0x10000]) {
 
 fn main() {
     let mut memory = [0u16; 0x10000];
-    // load_io_irq_test(&mut memory);
-    // load_io_irq_subcall_test(&mut memory);
-    // load_add_test(&mut memory);
-    load_factorial_interrupt_driven(&mut memory);
-    //
-    println!("Mem[0x1000..0x1010]: {:?}", &memory[0x0..0x110]);
-    println!("Mem[0x1FF0..0x2010]: {:?}", &memory[0x1FF0..0x2010]);
+    // // load_io_irq_test(&mut memory);
+    // // load_io_irq_subcall_test(&mut memory);
+    // // load_add_test(&mut memory);
+    // load_factorial_interrupt_driven(&mut memory);
+    // //
+    // println!("Mem[0x1000..0x1010]: {:?}", &memory[0x0..0x110]);
+    // println!("Mem[0x1FF0..0x2010]: {:?}", &memory[0x1FF0..0x2010]);
+
+    let bin_code = std::fs::read("out").unwrap();
+    let mut iter = bin_code.chunks(2).peekable();
+
+    while iter.peek().is_some() {
+        let chunk = iter.next().unwrap();
+        let offset = u16::from_le_bytes([chunk[0], chunk[1]]);
+        let chunk = iter.next().unwrap();
+        let size = u16::from_le_bytes([chunk[0], chunk[1]]);
+
+        for i in 0..size {
+            let chunk = iter.next().unwrap();
+            memory[(offset + i) as usize] = u16::from_le_bytes([chunk[0], chunk[1]]);
+        }
+    }
+
+    for i in 0..500 {
+        println!("{:3} - {}", i, memory[i]);
+    }
+
+    // panic!();
 
     let mut cu = control_unit::ControlUnit::new();
     let mut dp = data_path::DataPath::new(memory);
 
     let mut tick = 0u64;
-    let max_ticks = 300000;
+    let max_ticks = 10000;
 
     while tick < max_ticks && !cu.get_is_halted() {
-        if tick == 10 {
-            dp.set_io_read_buffer(IO_INPUT_VALUE);
-        }
+        // if tick == 10 {
+        //     dp.set_io_read_buffer(IO_INPUT_VALUE);
+        // }
         println!("\nTick {}", tick);
 
         let signals = cu.tick(&dp);
@@ -246,6 +267,7 @@ fn main() {
     let new_memory = dp.get_memory();
     println!("Mem[0x1000..0x1004]: {:?}", &new_memory[0x0..0x110]);
     println!("Mem[0x1FF0..0x2010]: {:?}", &new_memory[0x1FF0..0x2010]);
+    println!("Mem[430..440]: {:?}", &new_memory[445..450]);
 
     let output = dp.get_io_write_data();
 
