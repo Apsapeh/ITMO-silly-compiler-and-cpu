@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::codegen::Command;
 
@@ -38,7 +38,7 @@ pub fn copmile(src: String, asm_src: Vec<String>, debug: bool) -> Vec<u8> {
     linker::link(code)
 }
 
-fn print_cmd(cmd: Command, lbls: &HashMap<String, usize>) {
+fn print_cmd(cmd: Command, lbls: &BTreeMap<String, usize>) {
     match cmd {
         Command::Label(l) => {
             println!(

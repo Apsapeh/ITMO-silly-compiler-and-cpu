@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::codegen::{Codegen, Command};
 
@@ -75,7 +75,7 @@ pub fn link(mut code: Codegen) -> Vec<u8> {
     result
 }
 
-fn add_command(mem: &mut Vec<u8>, cmd: Command, labels: &HashMap<String, usize>) {
+fn add_command(mem: &mut Vec<u8>, cmd: Command, labels: &BTreeMap<String, usize>) {
     match cmd {
         Command::Word(w) => {
             mem.extend_from_slice(&w.to_le_bytes());

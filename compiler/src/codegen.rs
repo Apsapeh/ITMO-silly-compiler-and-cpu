@@ -2,6 +2,7 @@ use isa::Mode::*;
 use isa::Opcode::*;
 use isa::Register::*;
 use isa::*;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use crate::parser::ASTNode;
@@ -19,7 +20,7 @@ pub enum Command {
 #[derive(Debug, Clone)]
 pub struct Codegen {
     pub commands: Vec<Command>,
-    pub labels: HashMap<String, usize>,
+    pub labels: BTreeMap<String, usize>,
     label_counter: usize,
 
     //
@@ -31,7 +32,7 @@ impl Codegen {
     pub fn new(ast: Vec<ASTNode>, string_register: Vec<String>) -> Self {
         let mut code = Self {
             commands: vec![],
-            labels: HashMap::new(),
+            labels: BTreeMap::new(),
             label_counter: 0,
             current_loop_id_stack: vec![],
             current_procedure: None,
@@ -44,7 +45,7 @@ impl Codegen {
     pub fn new_from_asm(src: String) -> Self {
         let mut code = Self {
             commands: vec![],
-            labels: HashMap::new(),
+            labels: BTreeMap::new(),
             label_counter: 0,
             current_loop_id_stack: vec![],
             current_procedure: None,

@@ -1,0 +1,1752 @@
+src: |
+  ! Write word to mem[129]
+  PROCEDURE WRITE CHAR
+    VARIABLE OUT_ADDR
+    OUT_ADDR = 129
+    [0]OUT_ADDR = CHAR
+  
+  
+  ! Entry point (it must be in each program)
+  PROCEDURE MAIN
+    ! Result
+    ARRAY    MAX_PAL 2
+    VARIABLE A
+    VARIABLE B
+  
+    ! Init MAX_PAL with 0, cuz it's array
+    [0]MAX_PAL = 0
+    [1]MAX_PAL = 0
+  
+    VARIABLE I
+    I = 999
+    LOOP
+      IF I EQ 99
+        STOP
+  
+      VARIABLE J
+      J = 999
+      LOOP
+        IF J LT I
+          STOP
+  
+        ARRAY PRODUCT 2
+        CALL __MUL_TO_32BIT I, J, PRODUCT, PRODUCT ADD 1
+  
+        VARIABLE IS_LESS
+        CALL __IS_LESS_32BIT [0]PRODUCT, [1]PRODUCT, [0]MAX_PAL, [1]MAX_PAL, REF IS_LESS
+        IF IS_LESS
+          STOP
+  
+        VARIABLE IS_PAL
+        CALL IS_PALINDROME [0]PRODUCT, [1]PRODUCT, REF IS_PAL
+        IF IS_PAL
+          [0]MAX_PAL = [0]PRODUCT
+          [1]MAX_PAL = [1]PRODUCT
+          A = I
+          B = J
+        
+        J = J SUB 1
+    
+      I = I SUB 1
+  
+    CALL WRITE A
+    CALL WRITE B
+    CALL WRITE [0]MAX_PAL
+    CALL WRITE [1]MAX_PAL
+  
+  
+  PROCEDURE IS_PALINDROME NUM_L NUM_H OUT
+    ARRAY DIGITS 6
+  
+    ! Extract X_____
+    CALL EXTRACT_DIGIT NUM_L, NUM_H, 34464, 1, REF NUM_L, REF NUM_H, DIGITS
+  
+    ! Extract _X____
+    CALL EXTRACT_DIGIT NUM_L, NUM_H, 10000, 0, REF NUM_L, REF NUM_H, DIGITS ADD 1
+  
+    ! Extract __X___
+    [2]DIGITS = NUM_L DIV 1000
+    NUM_L = NUM_L MOD 1000      ! It's stupid contsruction, cuz cpu support it, but not my lang
+  
+    ! Extract ___X__
+    [3]DIGITS = NUM_L DIV 100
+    NUM_L = NUM_L MOD 100
+  
+    ! Extract ____X_
+    [4]DIGITS = NUM_L DIV 10
+  
+    ! Extract _____X
+    [5]DIGITS = NUM_L MOD 10
+  
+    ! Check is palindrome
+    IF [0]DIGITS EQ 0 ! 5-digit numbers
+      IF [1]DIGITS EQ [5]DIGITS  AND  [2]DIGITS EQ [4]DIGITS
+        [0]OUT = 1
+      ELSE
+        [0]OUT = 0
+    ELSE
+      IF [0]DIGITS EQ [5]DIGITS  AND  [1]DIGITS EQ [4]DIGITS  AND  [2]DIGITS EQ [3]DIGITS
+        [0]OUT = 1
+      ELSE
+        [0]OUT = 0
+  
+  
+  
+  PROCEDURE EXTRACT_DIGIT NUM_L NUM_H EX_L EX_H OUT_L OUT_H OUT_D
+    VARIABLE RESULT
+  
+    ! Just sub 'ex' from 'num' until num greater than ex
+    ! Iteration count is an answer
+    LOOP
+      VARIABLE IS_LESS
+      CALL __IS_LESS_32BIT NUM_L, NUM_H, EX_L, EX_H, REF IS_LESS
+      IF IS_LESS EQ 1
+        STOP
+  
+      CALL __SUB_32BIT NUM_L, NUM_H, EX_L, EX_H, REF NUM_L, REF NUM_H
+      RESULT = RESULT ADD 1
+  
+    [0]OUT_L = NUM_L
+    [0]OUT_H = NUM_H
+    [0]OUT_D = RESULT
+    
+
+asm: |
+  ; fn __mul_to_32bit(a: word, b: word, out_l: &mut word, out_h: &mut word)
+  ; This cann't be implemented in pure SHIT, cuz compiler store only
+  ;   lower part of the result. So, here is need some assembly
+  
+  : __mul_to_32bit
+  enter immtoreg   al al
+  # 0
+  push  regtoreg   al al
+  push  regtoreg   al ah
+  push  regtoreg   al bl
+  
+  ; a -> AL
+  mov   memratoreg al bp
+  # 5
+  ; b -> BL
+  mov   memratoreg bl bp
+  # 4
+  
+  ; a * b -> (AH:AL) little-endian
+  mul   regtoreg   al bl
+  
+  ; AH -> mem[out_h]
+  mov   memratoreg bl bp
+  # 2
+  mov   regtomemr  bl ah
+  
+  ; AL -> mem[out_l]
+  mov   memratoreg bl bp
+  # 3
+  mov   regtomemr  bl al
+  
+  pop   regtoreg   bl al
+  pop   regtoreg   ah al
+  pop   regtoreg   al al
+  leave regtoreg   al al
+  ret   immtoreg   al al
+  # 4
+  
+  
+  
+  ; fn __sub_32bit(
+  ;   a_l: word, a_h: word,
+  ;   b_l: word, b_h: word,
+  ;   out_l: &mut word, out_h: &mut word
+  ; )
+  ; This cann't be implemented in pure SHIT,
+  ;   cuz compiler doesn't support subc command
+  
+  : __sub_32bit
+  enter immtoreg   al al
+  # 0
+  push  regtoreg   al al
+  push  regtoreg   al ah
+  push  regtoreg   al bl
+  
+  ; a_l -> AL
+  mov   memratoreg al bp
+  # 7
+  sub   memratoreg al bp
+  # 5
+  
+  ; a_h -> AH
+  mov   memratoreg ah bp
+  # 6
+  subc   memratoreg ah bp
+  # 4
+  
+  ; AH -> mem[out_h]
+  mov   memratoreg bl bp
+  # 2
+  mov   regtomemr  bl ah
+  
+  ; AL -> mem[out_l]
+  mov   memratoreg bl bp
+  # 3
+  mov   regtomemr  bl al
+  
+  pop   regtoreg   bl al
+  pop   regtoreg   ah al
+  pop   regtoreg   al al
+  leave regtoreg   al al
+  ret   immtoreg   al al
+  # 4
+  
+  
+  
+  ; fn __is_less_32bit(
+  ;   a_l: word, a_h: word,
+  ;   b_l: word, b_h: word,
+  ;   out_l: &mut word
+  ; )
+  ; This can be implemented in pure SHIT,
+  ;   but it's more optimized
+  
+  : __is_less_32bit
+  enter immtoreg   al al
+  # 0
+  push  regtoreg   al al
+  push  regtoreg   al ah
+  push  regtoreg   al bl
+  
+  ; if (a_h < b_h) return 1;
+  mov   memratoreg al bp
+  # 5
+  cmp   memratoreg al bp
+  # 3
+  jl   immtoreg   al al
+  @ __is_less_32bit.set_return.1
+  
+  ; if (a_h > b_h) return 0;
+  jg    immtoreg   al al
+  @ __is_less_32bit.set_return.0
+  
+  ; if (a_l < b_l) return 1;
+  mov   memratoreg al bp
+  # 6
+  cmp   memratoreg al bp
+  # 4
+  jcs    immtoreg   al al
+  @ __is_less_32bit.set_return.1
+  
+  ; else return 0;
+  jmp    immtoreg   al al
+  @ __is_less_32bit.set_return.0
+  
+  : __is_less_32bit.set_return.1
+  mov   immtoreg al al
+  # 1
+  jmp   immtoreg al al
+  @ __is_less_32bit.return
+  
+  : __is_less_32bit.set_return.0
+  mov   immtoreg al al
+  # 0
+  
+  : __is_less_32bit.return
+  mov   memratoreg bl bp
+  # 2
+  mov   regtomemr  bl al
+  
+  pop   regtoreg   bl al
+  pop   regtoreg   ah al
+  pop   regtoreg   al al
+  leave regtoreg   al al
+  ret   immtoreg   al al
+  # 5
+  
+
+    
+  
+limit: 32000000
+  
+input: {}
+
+cpu_out: [913, 993, 54641, 13]
+# none, all, <limit>
+cpu_log_limit: none
+
+compiler_log: |
+  Procedure (WRITE)
+  ├── Args
+  │   └── CHAR
+  └── Block
+      ├── Variable: OUT_ADDR
+      │   └── Type: WORD
+      ├── Set
+      │   ├── Variable: OUT_ADDR
+      │   └── Expression
+      │       └── Number: 129
+      └── Set
+          ├── Variable: OUT_ADDR
+          │   └── Deref offset
+          │       └── Number: 0
+          └── Expression
+              └── Variable: CHAR
+  
+  Procedure (MAIN)
+  ├── Args
+  └── Block
+      ├── Variable: MAX_PAL
+      │   └── Type: ARRAY (2)
+      ├── Variable: A
+      │   └── Type: WORD
+      ├── Variable: B
+      │   └── Type: WORD
+      ├── Set
+      │   ├── Variable: MAX_PAL
+      │   │   └── Deref offset
+      │   │       └── Number: 0
+      │   └── Expression
+      │       └── Number: 0
+      ├── Set
+      │   ├── Variable: MAX_PAL
+      │   │   └── Deref offset
+      │   │       └── Number: 1
+      │   └── Expression
+      │       └── Number: 0
+      ├── Variable: I
+      │   └── Type: WORD
+      ├── Set
+      │   ├── Variable: I
+      │   └── Expression
+      │       └── Number: 999
+      ├── Loop
+      │   └── Block
+      │       ├── If
+      │       │   ├── Condition
+      │       │   │   └── ==
+      │       │   │       ├── Variable: I
+      │       │   │       └── Number: 99
+      │       │   └── Block
+      │       │       └── Stop
+      │       ├── Variable: J
+      │       │   └── Type: WORD
+      │       ├── Set
+      │       │   ├── Variable: J
+      │       │   └── Expression
+      │       │       └── Number: 999
+      │       ├── Loop
+      │       │   └── Block
+      │       │       ├── If
+      │       │       │   ├── Condition
+      │       │       │   │   └── <
+      │       │       │   │       ├── Variable: J
+      │       │       │   │       └── Variable: I
+      │       │       │   └── Block
+      │       │       │       └── Stop
+      │       │       ├── Variable: PRODUCT
+      │       │       │   └── Type: ARRAY (2)
+      │       │       ├── Call (__MUL_TO_32BIT)
+      │       │       │   ├── Variable: I
+      │       │       │   ├── Variable: J
+      │       │       │   ├── Variable: PRODUCT
+      │       │       │   └── +
+      │       │       │       ├── Variable: PRODUCT
+      │       │       │       └── Number: 1
+      │       │       ├── Variable: IS_LESS
+      │       │       │   └── Type: WORD
+      │       │       ├── Call (__IS_LESS_32BIT)
+      │       │       │   ├── Variable: PRODUCT
+      │       │       │   │   └── Deref offset
+      │       │       │   │       └── Number: 0
+      │       │       │   ├── Variable: PRODUCT
+      │       │       │   │   └── Deref offset
+      │       │       │   │       └── Number: 1
+      │       │       │   ├── Variable: MAX_PAL
+      │       │       │   │   └── Deref offset
+      │       │       │   │       └── Number: 0
+      │       │       │   ├── Variable: MAX_PAL
+      │       │       │   │   └── Deref offset
+      │       │       │   │       └── Number: 1
+      │       │       │   └── Address of Var: IS_LESS
+      │       │       ├── If
+      │       │       │   ├── Condition
+      │       │       │   │   └── Variable: IS_LESS
+      │       │       │   └── Block
+      │       │       │       └── Stop
+      │       │       ├── Variable: IS_PAL
+      │       │       │   └── Type: WORD
+      │       │       ├── Call (IS_PALINDROME)
+      │       │       │   ├── Variable: PRODUCT
+      │       │       │   │   └── Deref offset
+      │       │       │   │       └── Number: 0
+      │       │       │   ├── Variable: PRODUCT
+      │       │       │   │   └── Deref offset
+      │       │       │   │       └── Number: 1
+      │       │       │   └── Address of Var: IS_PAL
+      │       │       ├── If
+      │       │       │   ├── Condition
+      │       │       │   │   └── Variable: IS_PAL
+      │       │       │   └── Block
+      │       │       │       ├── Set
+      │       │       │       │   ├── Variable: MAX_PAL
+      │       │       │       │   │   └── Deref offset
+      │       │       │       │   │       └── Number: 0
+      │       │       │       │   └── Expression
+      │       │       │       │       └── Variable: PRODUCT
+      │       │       │       │           └── Deref offset
+      │       │       │       │               └── Number: 0
+      │       │       │       ├── Set
+      │       │       │       │   ├── Variable: MAX_PAL
+      │       │       │       │   │   └── Deref offset
+      │       │       │       │   │       └── Number: 1
+      │       │       │       │   └── Expression
+      │       │       │       │       └── Variable: PRODUCT
+      │       │       │       │           └── Deref offset
+      │       │       │       │               └── Number: 1
+      │       │       │       ├── Set
+      │       │       │       │   ├── Variable: A
+      │       │       │       │   └── Expression
+      │       │       │       │       └── Variable: I
+      │       │       │       └── Set
+      │       │       │           ├── Variable: B
+      │       │       │           └── Expression
+      │       │       │               └── Variable: J
+      │       │       └── Set
+      │       │           ├── Variable: J
+      │       │           └── Expression
+      │       │               └── -
+      │       │                   ├── Variable: J
+      │       │                   └── Number: 1
+      │       └── Set
+      │           ├── Variable: I
+      │           └── Expression
+      │               └── -
+      │                   ├── Variable: I
+      │                   └── Number: 1
+      ├── Call (WRITE)
+      │   └── Variable: A
+      ├── Call (WRITE)
+      │   └── Variable: B
+      ├── Call (WRITE)
+      │   └── Variable: MAX_PAL
+      │       └── Deref offset
+      │           └── Number: 0
+      └── Call (WRITE)
+          └── Variable: MAX_PAL
+              └── Deref offset
+                  └── Number: 1
+  
+  Procedure (IS_PALINDROME)
+  ├── Args
+  │   ├── NUM_L
+  │   ├── NUM_H
+  │   └── OUT
+  └── Block
+      ├── Variable: DIGITS
+      │   └── Type: ARRAY (6)
+      ├── Call (EXTRACT_DIGIT)
+      │   ├── Variable: NUM_L
+      │   ├── Variable: NUM_H
+      │   ├── Number: 34464
+      │   ├── Number: 1
+      │   ├── Address of Var: NUM_L
+      │   ├── Address of Var: NUM_H
+      │   └── Variable: DIGITS
+      ├── Call (EXTRACT_DIGIT)
+      │   ├── Variable: NUM_L
+      │   ├── Variable: NUM_H
+      │   ├── Number: 10000
+      │   ├── Number: 0
+      │   ├── Address of Var: NUM_L
+      │   ├── Address of Var: NUM_H
+      │   └── +
+      │       ├── Variable: DIGITS
+      │       └── Number: 1
+      ├── Set
+      │   ├── Variable: DIGITS
+      │   │   └── Deref offset
+      │   │       └── Number: 2
+      │   └── Expression
+      │       └── /
+      │           ├── Variable: NUM_L
+      │           └── Number: 1000
+      ├── Set
+      │   ├── Variable: NUM_L
+      │   └── Expression
+      │       └── %
+      │           ├── Variable: NUM_L
+      │           └── Number: 1000
+      ├── Set
+      │   ├── Variable: DIGITS
+      │   │   └── Deref offset
+      │   │       └── Number: 3
+      │   └── Expression
+      │       └── /
+      │           ├── Variable: NUM_L
+      │           └── Number: 100
+      ├── Set
+      │   ├── Variable: NUM_L
+      │   └── Expression
+      │       └── %
+      │           ├── Variable: NUM_L
+      │           └── Number: 100
+      ├── Set
+      │   ├── Variable: DIGITS
+      │   │   └── Deref offset
+      │   │       └── Number: 4
+      │   └── Expression
+      │       └── /
+      │           ├── Variable: NUM_L
+      │           └── Number: 10
+      ├── Set
+      │   ├── Variable: DIGITS
+      │   │   └── Deref offset
+      │   │       └── Number: 5
+      │   └── Expression
+      │       └── %
+      │           ├── Variable: NUM_L
+      │           └── Number: 10
+      └── If
+          ├── Condition
+          │   └── ==
+          │       ├── Variable: DIGITS
+          │       │   └── Deref offset
+          │       │       └── Number: 0
+          │       └── Number: 0
+          ├── Block
+          │   └── If
+          │       ├── Condition
+          │       │   └── &&
+          │       │       ├── ==
+          │       │       │   ├── Variable: DIGITS
+          │       │       │   │   └── Deref offset
+          │       │       │   │       └── Number: 1
+          │       │       │   └── Variable: DIGITS
+          │       │       │       └── Deref offset
+          │       │       │           └── Number: 5
+          │       │       └── ==
+          │       │           ├── Variable: DIGITS
+          │       │           │   └── Deref offset
+          │       │           │       └── Number: 2
+          │       │           └── Variable: DIGITS
+          │       │               └── Deref offset
+          │       │                   └── Number: 4
+          │       ├── Block
+          │       │   └── Set
+          │       │       ├── Variable: OUT
+          │       │       │   └── Deref offset
+          │       │       │       └── Number: 0
+          │       │       └── Expression
+          │       │           └── Number: 1
+          │       └── Else
+          │           └── Set
+          │               ├── Variable: OUT
+          │               │   └── Deref offset
+          │               │       └── Number: 0
+          │               └── Expression
+          │                   └── Number: 0
+          └── Else
+              └── If
+                  ├── Condition
+                  │   └── &&
+                  │       ├── &&
+                  │       │   ├── ==
+                  │       │   │   ├── Variable: DIGITS
+                  │       │   │   │   └── Deref offset
+                  │       │   │   │       └── Number: 0
+                  │       │   │   └── Variable: DIGITS
+                  │       │   │       └── Deref offset
+                  │       │   │           └── Number: 5
+                  │       │   └── ==
+                  │       │       ├── Variable: DIGITS
+                  │       │       │   └── Deref offset
+                  │       │       │       └── Number: 1
+                  │       │       └── Variable: DIGITS
+                  │       │           └── Deref offset
+                  │       │               └── Number: 4
+                  │       └── ==
+                  │           ├── Variable: DIGITS
+                  │           │   └── Deref offset
+                  │           │       └── Number: 2
+                  │           └── Variable: DIGITS
+                  │               └── Deref offset
+                  │                   └── Number: 3
+                  ├── Block
+                  │   └── Set
+                  │       ├── Variable: OUT
+                  │       │   └── Deref offset
+                  │       │       └── Number: 0
+                  │       └── Expression
+                  │           └── Number: 1
+                  └── Else
+                      └── Set
+                          ├── Variable: OUT
+                          │   └── Deref offset
+                          │       └── Number: 0
+                          └── Expression
+                              └── Number: 0
+  
+  Procedure (EXTRACT_DIGIT)
+  ├── Args
+  │   ├── NUM_L
+  │   ├── NUM_H
+  │   ├── EX_L
+  │   ├── EX_H
+  │   ├── OUT_L
+  │   ├── OUT_H
+  │   └── OUT_D
+  └── Block
+      ├── Variable: RESULT
+      │   └── Type: WORD
+      ├── Loop
+      │   └── Block
+      │       ├── Variable: IS_LESS
+      │       │   └── Type: WORD
+      │       ├── Call (__IS_LESS_32BIT)
+      │       │   ├── Variable: NUM_L
+      │       │   ├── Variable: NUM_H
+      │       │   ├── Variable: EX_L
+      │       │   ├── Variable: EX_H
+      │       │   └── Address of Var: IS_LESS
+      │       ├── If
+      │       │   ├── Condition
+      │       │   │   └── ==
+      │       │   │       ├── Variable: IS_LESS
+      │       │   │       └── Number: 1
+      │       │   └── Block
+      │       │       └── Stop
+      │       ├── Call (__SUB_32BIT)
+      │       │   ├── Variable: NUM_L
+      │       │   ├── Variable: NUM_H
+      │       │   ├── Variable: EX_L
+      │       │   ├── Variable: EX_H
+      │       │   ├── Address of Var: NUM_L
+      │       │   └── Address of Var: NUM_H
+      │       └── Set
+      │           ├── Variable: RESULT
+      │           └── Expression
+      │               └── +
+      │                   ├── Variable: RESULT
+      │                   └── Number: 1
+      ├── Set
+      │   ├── Variable: OUT_L
+      │   │   └── Deref offset
+      │   │       └── Number: 0
+      │   └── Expression
+      │       └── Variable: NUM_L
+      ├── Set
+      │   ├── Variable: OUT_H
+      │   │   └── Deref offset
+      │   │       └── Number: 0
+      │   └── Expression
+      │       └── Variable: NUM_H
+      └── Set
+          ├── Variable: OUT_D
+          │   └── Deref offset
+          │       └── Number: 0
+          └── Expression
+              └── Variable: RESULT
+  
+  
+  WRITE:
+      -25536   ( 40000 )     |           |     enter    immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -27647   ( 37889 )     |           |     push     regtoreg     al,  ah
+      -27646   ( 37890 )     |           |     push     regtoreg     al,  bl
+      -27645   ( 37891 )     |           |     push     regtoreg     al,  bh
+      -27644   ( 37892 )     |           |     push     regtoreg     al,  cl
+      -27643   ( 37893 )     |           |     push     regtoreg     al,  ch
+      2751     ( 2751  )     |           |     mov      immtomemra   bp,  bp
+      -1       ( 65535 )     |           |
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      129      (  129  )     |           |     nop      memrtoreg    al,  ah
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      -1       ( 65535 )     |           |
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -1       ( 65535 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+  
+  WRITE .out:
+      -26584   ( 38952 )     |           |     pop      regtoreg     ch,  al
+      -26592   ( 38944 )     |           |     pop      regtoreg     cl,  al
+      -26600   ( 38936 )     |           |     pop      regtoreg     bh,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      -26616   ( 38920 )     |           |     pop      regtoreg     ah,  al
+      -26624   ( 38912 )     |           |     pop      regtoreg     al,  al
+      -24576   ( 40960 )     |           |     leave    regtoreg     al,  al
+      -28608   ( 36928 )     |           |     ret      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  MAIN:
+      -25536   ( 40000 )     |           |     enter    immtoreg     al,  al
+      12       (  12   )     |           |     nop      regtoreg     ah,  cl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -27647   ( 37889 )     |           |     push     regtoreg     al,  ah
+      -27646   ( 37890 )     |           |     push     regtoreg     al,  bl
+      -27645   ( 37891 )     |           |     push     regtoreg     al,  bh
+      -27644   ( 37892 )     |           |     push     regtoreg     al,  cl
+      -27643   ( 37893 )     |           |     push     regtoreg     al,  ch
+      2687     ( 2687  )     |           |     mov      regtomemra   bp,  bp
+      -3       ( 65533 )     |           |
+      5823     ( 5823  )     |           |     sub      immtomemra   bp,  bp
+      -3       ( 65533 )     |           |
+      -2       ( 65534 )     |           |
+      2751     ( 2751  )     |           |     mov      immtomemra   bp,  bp
+      -4       ( 65532 )     |           |
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      2751     ( 2751  )     |           |     mov      immtomemra   bp,  bp
+      -5       ( 65531 )     |           |
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -3       ( 65533 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -3       ( 65533 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2751     ( 2751  )     |           |     mov      immtomemra   bp,  bp
+      -6       ( 65530 )     |           |
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      999      (  999  )     |           |
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      -6       ( 65530 )     |           |
+  
+  .loop 0:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      99       (  99   )     |     c     |     nop      immtoreg     cl,  bh
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -6       ( 65530 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20482    ( 20482 )     |           |     cmp      regtoreg     al,  bl
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .cmp true 2 (99)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .cmp end 2 (101)
+  
+  .cmp true 2:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  .cmp end 2:
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .if end 1 (107)
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .loop 0 out (311)
+  
+  .if end 1:
+      2751     ( 2751  )     |           |     mov      immtomemra   bp,  bp
+      -7       ( 65529 )     |           |
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      999      (  999  )     |           |
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      -7       ( 65529 )     |           |
+  
+  .loop 3:
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -6       ( 65530 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20482    ( 20482 )     |           |     cmp      regtoreg     al,  bl
+      31808    ( 31808 )     |           |     jl       immtoreg     al,  al
+      @ .cmp true 5 (127)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .cmp end 5 (129)
+  
+  .cmp true 5:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  .cmp end 5:
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .if end 4 (135)
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .loop 3 out (300)
+  
+  .if end 4:
+      2687     ( 2687  )     |           |     mov      regtomemra   bp,  bp
+      -10      ( 65526 )     |           |
+      5823     ( 5823  )     |           |     sub      immtomemra   bp,  bp
+      -10      ( 65526 )     |           |
+      -9       ( 65527 )     |           |
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -6       ( 65530 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -10      ( 65526 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -10      ( 65526 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ __MUL_TO_32BIT (918)
+      2751     ( 2751  )     |           |     mov      immtomemra   bp,  bp
+      -11      ( 65525 )     |           |
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -10      ( 65526 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -10      ( 65526 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -3       ( 65533 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -3       ( 65533 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2055     ( 2055  )     |           |     mov      regtoreg     al,  bp
+      5184     ( 5184  )     |           |     sub      immtoreg     al,  al
+      11       (  11   )     |           |     nop      regtoreg     ah,  bh
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ __IS_LESS_32BIT (965)
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -11      ( 65525 )     |           |
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .if end 6 (212)
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .loop 3 out (300)
+  
+  .if end 6:
+      2751     ( 2751  )     |           |     mov      immtomemra   bp,  bp
+      -12      ( 65524 )     |           |
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -10      ( 65526 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -10      ( 65526 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2055     ( 2055  )     |           |     mov      regtoreg     al,  bp
+      5184     ( 5184  )     |           |     sub      immtoreg     al,  al
+      12       (  12   )     |           |     nop      regtoreg     ah,  cl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ IS_PALINDROME (351)
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -12      ( 65524 )     |           |
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .if end 7 (289)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -3       ( 65533 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -10      ( 65526 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -3       ( 65533 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -10      ( 65526 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -6       ( 65530 )     |           |
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      -4       ( 65532 )     |           |
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      -5       ( 65531 )     |           |
+  
+  .if end 7:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      5122     ( 5122  )     |           |     sub      regtoreg     al,  bl
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      -7       ( 65529 )     |           |
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .loop 3 (114)
+  
+  .loop 3 out:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -6       ( 65530 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      5122     ( 5122  )     |           |     sub      regtoreg     al,  bl
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      -6       ( 65530 )     |           |
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .loop 0 (86)
+  
+  .loop 0 out:
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -4       ( 65532 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ WRITE (0)
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -5       ( 65531 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ WRITE (0)
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -3       ( 65533 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ WRITE (0)
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -3       ( 65533 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ WRITE (0)
+  
+  MAIN .out:
+      -26584   ( 38952 )     |           |     pop      regtoreg     ch,  al
+      -26592   ( 38944 )     |           |     pop      regtoreg     cl,  al
+      -26600   ( 38936 )     |           |     pop      regtoreg     bh,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      -26616   ( 38920 )     |           |     pop      regtoreg     ah,  al
+      -26624   ( 38912 )     |           |     pop      regtoreg     al,  al
+      -24576   ( 40960 )     |           |     leave    regtoreg     al,  al
+      -28672   ( 36864 )     |           |     ret      regtoreg     al,  al
+  
+  IS_PALINDROME:
+      -25536   ( 40000 )     |           |     enter    immtoreg     al,  al
+      7        (   7   )     |           |     nop      regtoreg     al,  bp
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -27647   ( 37889 )     |           |     push     regtoreg     al,  ah
+      -27646   ( 37890 )     |           |     push     regtoreg     al,  bl
+      -27645   ( 37891 )     |           |     push     regtoreg     al,  bh
+      -27644   ( 37892 )     |           |     push     regtoreg     al,  cl
+      -27643   ( 37893 )     |           |     push     regtoreg     al,  ch
+      2687     ( 2687  )     |           |     mov      regtomemra   bp,  bp
+      -7       ( 65529 )     |           |
+      5823     ( 5823  )     |           |     sub      immtomemra   bp,  bp
+      -7       ( 65529 )     |           |
+      -6       ( 65530 )     |           |
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      -31072   ( 34464 )     |           |     jg       immtomemra   cl,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2055     ( 2055  )     |           |     mov      regtoreg     al,  bp
+      3136     ( 3136  )     |           |     add      immtoreg     al,  al
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2055     ( 2055  )     |           |     mov      regtoreg     al,  bp
+      3136     ( 3136  )     |           |     add      immtoreg     al,  al
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ EXTRACT_DIGIT (787)
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      10000    ( 10000 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2055     ( 2055  )     |           |     mov      regtoreg     al,  bp
+      3136     ( 3136  )     |           |     add      immtoreg     al,  al
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2055     ( 2055  )     |           |     mov      regtoreg     al,  bp
+      3136     ( 3136  )     |           |     add      immtoreg     al,  al
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ EXTRACT_DIGIT (787)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1000     ( 1000  )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      8194     ( 8194  )     |           |     div      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1000     ( 1000  )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      8194     ( 8194  )     |           |     div      regtoreg     al,  bl
+      2049     ( 2049  )     |           |     mov      regtoreg     al,  ah
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      100      (  100  )     |     d     |     nop      immtoreg     cl,  cl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      8194     ( 8194  )     |           |     div      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      100      (  100  )     |     d     |     nop      immtoreg     cl,  cl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      8194     ( 8194  )     |           |     div      regtoreg     al,  bl
+      2049     ( 2049  )     |           |     mov      regtoreg     al,  ah
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      10       (  10   )     |           |     nop      regtoreg     ah,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      8194     ( 8194  )     |           |     div      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      5        (   5   )     |           |     nop      regtoreg     al,  ch
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      10       (  10   )     |           |     nop      regtoreg     ah,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      8194     ( 8194  )     |           |     div      regtoreg     al,  bl
+      2049     ( 2049  )     |           |     mov      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20482    ( 20482 )     |           |     cmp      regtoreg     al,  bl
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .cmp true 9 (527)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .cmp end 9 (529)
+  
+  .cmp true 9:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  .cmp end 9:
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .if else 8 (635)
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20482    ( 20482 )     |           |     cmp      regtoreg     al,  bl
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .cmp true 11 (558)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .cmp end 11 (560)
+  
+  .cmp true 11:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  .cmp end 11:
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      5        (   5   )     |           |     nop      regtoreg     al,  ch
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20482    ( 20482 )     |           |     cmp      regtoreg     al,  bl
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .cmp true 12 (586)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .cmp end 12 (588)
+  
+  .cmp true 12:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  .cmp end 12:
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .and false 13 (601)
+      20562    ( 20562 )     |           |     cmp      immtoreg     bl,  bl
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .and false 13 (601)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .and end 13 (603)
+  
+  .and false 13:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+  
+  .and end 13:
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .if else 10 (621)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .if end 10 (633)
+  
+  .if else 10:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+  
+  .if end 10:
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .if end 8 (778)
+  
+  .if else 8:
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20482    ( 20482 )     |           |     cmp      regtoreg     al,  bl
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .cmp true 15 (660)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .cmp end 15 (662)
+  
+  .cmp true 15:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  .cmp end 15:
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20482    ( 20482 )     |           |     cmp      regtoreg     al,  bl
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .cmp true 16 (688)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .cmp end 16 (690)
+  
+  .cmp true 16:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  .cmp end 16:
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      5        (   5   )     |           |     nop      regtoreg     al,  ch
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -7       ( 65529 )     |           |
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2176     ( 2176  )     |           |     mov      memrtoreg    al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20482    ( 20482 )     |           |     cmp      regtoreg     al,  bl
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .cmp true 17 (716)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .cmp end 17 (718)
+  
+  .cmp true 17:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  .cmp end 17:
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .and false 18 (731)
+      20562    ( 20562 )     |           |     cmp      immtoreg     bl,  bl
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .and false 18 (731)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .and end 18 (733)
+  
+  .and false 18:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+  
+  .and end 18:
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .and false 19 (746)
+      20562    ( 20562 )     |           |     cmp      immtoreg     bl,  bl
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .and false 19 (746)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .and end 19 (748)
+  
+  .and false 19:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+  
+  .and end 19:
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .if else 14 (766)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .if end 14 (778)
+  
+  .if else 14:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+  
+  IS_PALINDROME .out:
+      -26584   ( 38952 )     |           |     pop      regtoreg     ch,  al
+      -26592   ( 38944 )     |           |     pop      regtoreg     cl,  al
+      -26600   ( 38936 )     |           |     pop      regtoreg     bh,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      -26616   ( 38920 )     |           |     pop      regtoreg     ah,  al
+      -26624   ( 38912 )     |           |     pop      regtoreg     al,  al
+      -24576   ( 40960 )     |           |     leave    regtoreg     al,  al
+      -28608   ( 36928 )     |           |     ret      immtoreg     al,  al
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+  
+  EXTRACT_DIGIT:
+      -25536   ( 40000 )     |           |     enter    immtoreg     al,  al
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -27647   ( 37889 )     |           |     push     regtoreg     al,  ah
+      -27646   ( 37890 )     |           |     push     regtoreg     al,  bl
+      -27645   ( 37891 )     |           |     push     regtoreg     al,  bh
+      -27644   ( 37892 )     |           |     push     regtoreg     al,  cl
+      -27643   ( 37893 )     |           |     push     regtoreg     al,  ch
+      2751     ( 2751  )     |           |     mov      immtomemra   bp,  bp
+      -1       ( 65535 )     |           |
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+  
+  .loop 20:
+      2751     ( 2751  )     |           |     mov      immtomemra   bp,  bp
+      -2       ( 65534 )     |           |
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      8        (   8   )     |           |     nop      regtoreg     ah,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      7        (   7   )     |           |     nop      regtoreg     al,  bp
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      6        (   6   )     |           |     nop      regtoreg     al,  sp
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      5        (   5   )     |           |     nop      regtoreg     al,  ch
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2055     ( 2055  )     |           |     mov      regtoreg     al,  bp
+      5184     ( 5184  )     |           |     sub      immtoreg     al,  al
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ __IS_LESS_32BIT (965)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -2       ( 65534 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      20482    ( 20482 )     |           |     cmp      regtoreg     al,  bl
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .cmp true 22 (832)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .cmp end 22 (834)
+  
+  .cmp true 22:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+  
+  .cmp end 22:
+      20544    ( 20544 )     |           |     cmp      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      23616    ( 23616 )     |           |     je       immtoreg     al,  al
+      @ .if end 21 (840)
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .loop 20 out (873)
+  
+  .if end 21:
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      8        (   8   )     |           |     nop      regtoreg     ah,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      7        (   7   )     |           |     nop      regtoreg     al,  bp
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      6        (   6   )     |           |     nop      regtoreg     al,  sp
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      5        (   5   )     |           |     nop      regtoreg     al,  ch
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2055     ( 2055  )     |           |     mov      regtoreg     al,  bp
+      3136     ( 3136  )     |           |     add      immtoreg     al,  al
+      8        (   8   )     |           |     nop      regtoreg     ah,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2055     ( 2055  )     |           |     mov      regtoreg     al,  bp
+      3136     ( 3136  )     |           |     add      immtoreg     al,  al
+      7        (   7   )     |           |     nop      regtoreg     al,  bp
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -29632   ( 35904 )     |           |     call     immtoreg     al,  al
+      @ __SUB_32BIT (940)
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -1       ( 65535 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      2680     ( 2680  )     |           |     mov      regtomemra   bp,  al
+      -1       ( 65535 )     |           |
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ .loop 20 (798)
+  
+  .loop 20 out:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      8        (   8   )     |           |     nop      regtoreg     ah,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      7        (   7   )     |           |     nop      regtoreg     al,  bp
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      3074     ( 3074  )     |           |     add      regtoreg     al,  bl
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      -1       ( 65535 )     |           |
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+  
+  EXTRACT_DIGIT .out:
+      -26584   ( 38952 )     |           |     pop      regtoreg     ch,  al
+      -26592   ( 38944 )     |           |     pop      regtoreg     cl,  al
+      -26600   ( 38936 )     |           |     pop      regtoreg     bh,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      -26616   ( 38920 )     |           |     pop      regtoreg     ah,  al
+      -26624   ( 38912 )     |           |     pop      regtoreg     al,  al
+      -24576   ( 40960 )     |           |     leave    regtoreg     al,  al
+      -28608   ( 36928 )     |           |     ret      immtoreg     al,  al
+      7        (   7   )     |           |     nop      regtoreg     al,  bp
+  
+  __MUL_TO_32BIT:
+      -25536   ( 40000 )     |           |     enter    immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -27647   ( 37889 )     |           |     push     regtoreg     al,  ah
+      -27646   ( 37890 )     |           |     push     regtoreg     al,  bl
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      5        (   5   )     |           |     nop      regtoreg     al,  ch
+      2327     ( 2327  )     |           |     mov      memratoreg   bl,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      7170     ( 7170  )     |           |     mul      regtoreg     al,  bl
+      2327     ( 2327  )     |           |     mov      memratoreg   bl,  bp
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      2385     ( 2385  )     |           |     mov      regtomemr    bl,  ah
+      2327     ( 2327  )     |           |     mov      memratoreg   bl,  bp
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      -26616   ( 38920 )     |           |     pop      regtoreg     ah,  al
+      -26624   ( 38912 )     |           |     pop      regtoreg     al,  al
+      -24576   ( 40960 )     |           |     leave    regtoreg     al,  al
+      -28608   ( 36928 )     |           |     ret      immtoreg     al,  al
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+  
+  __SUB_32BIT:
+      -25536   ( 40000 )     |           |     enter    immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -27647   ( 37889 )     |           |     push     regtoreg     al,  ah
+      -27646   ( 37890 )     |           |     push     regtoreg     al,  bl
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      7        (   7   )     |           |     nop      regtoreg     al,  bp
+      5383     ( 5383  )     |           |     sub      memratoreg   al,  bp
+      5        (   5   )     |           |     nop      regtoreg     al,  ch
+      2319     ( 2319  )     |           |     mov      memratoreg   ah,  bp
+      6        (   6   )     |           |     nop      regtoreg     al,  sp
+      6415     ( 6415  )     |           |     subc     memratoreg   ah,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      2327     ( 2327  )     |           |     mov      memratoreg   bl,  bp
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      2385     ( 2385  )     |           |     mov      regtomemr    bl,  ah
+      2327     ( 2327  )     |           |     mov      memratoreg   bl,  bp
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      -26616   ( 38920 )     |           |     pop      regtoreg     ah,  al
+      -26624   ( 38912 )     |           |     pop      regtoreg     al,  al
+      -24576   ( 40960 )     |           |     leave    regtoreg     al,  al
+      -28608   ( 36928 )     |           |     ret      immtoreg     al,  al
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+  
+  __IS_LESS_32BIT:
+      -25536   ( 40000 )     |           |     enter    immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+      -27648   ( 37888 )     |           |     push     regtoreg     al,  al
+      -27647   ( 37889 )     |           |     push     regtoreg     al,  ah
+      -27646   ( 37890 )     |           |     push     regtoreg     al,  bl
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      5        (   5   )     |           |     nop      regtoreg     al,  ch
+      20743    ( 20743 )     |           |     cmp      memratoreg   al,  bp
+      3        (   3   )     |           |     nop      regtoreg     al,  bh
+      31808    ( 31808 )     |           |     jl       immtoreg     al,  al
+      @ __IS_LESS_32BIT.SET_RETURN.1 (986)
+      -31680   ( 33856 )     |           |     jg       immtoreg     al,  al
+      @ __IS_LESS_32BIT.SET_RETURN.0 (990)
+      2311     ( 2311  )     |           |     mov      memratoreg   al,  bp
+      6        (   6   )     |           |     nop      regtoreg     al,  sp
+      20743    ( 20743 )     |           |     cmp      memratoreg   al,  bp
+      4        (   4   )     |           |     nop      regtoreg     al,  cl
+      27712    ( 27712 )     |           |     jcs      immtoreg     al,  al
+      @ __IS_LESS_32BIT.SET_RETURN.1 (986)
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ __IS_LESS_32BIT.SET_RETURN.0 (990)
+  
+  __IS_LESS_32BIT.SET_RETURN.1:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      1        (   1   )     |           |     nop      regtoreg     al,  ah
+      22592    ( 22592 )     |           |     jmp      immtoreg     al,  al
+      @ __IS_LESS_32BIT.RETURN (992)
+  
+  __IS_LESS_32BIT.SET_RETURN.0:
+      2112     ( 2112  )     |           |     mov      immtoreg     al,  al
+      0        (   0   )     |           |     nop      regtoreg     al,  al
+  
+  __IS_LESS_32BIT.RETURN:
+      2327     ( 2327  )     |           |     mov      memratoreg   bl,  bp
+      2        (   2   )     |           |     nop      regtoreg     al,  bl
+      2384     ( 2384  )     |           |     mov      regtomemr    bl,  al
+      -26608   ( 38928 )     |           |     pop      regtoreg     bl,  al
+      -26616   ( 38920 )     |           |     pop      regtoreg     ah,  al
+      -26624   ( 38912 )     |           |     pop      regtoreg     al,  al
+      -24576   ( 40960 )     |           |     leave    regtoreg     al,  al
+      -28608   ( 36928 )     |           |     ret      immtoreg     al,  al
+      5        (   5   )     |           |     nop      regtoreg     al,  ch

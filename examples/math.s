@@ -84,6 +84,52 @@ ret   immtoreg   al al
 
 
 
+; fn __add_32bit(
+;   a_l: word, a_h: word,
+;   b_l: word, b_h: word,
+;   out_l: &mut word, out_h: &mut word
+; )
+; This cann't be implemented in pure SHIT,
+;   cuz compiler doesn't support addc command
+
+: __add_32bit
+enter immtoreg   al al
+# 0
+push  regtoreg   al al
+push  regtoreg   al ah
+push  regtoreg   al bl
+
+; a_l -> AL
+mov   memratoreg al bp
+# 7
+add   memratoreg al bp
+# 5
+
+; a_h -> AH
+mov   memratoreg ah bp
+# 6
+addc   memratoreg ah bp
+# 4
+
+; AH -> mem[out_h]
+mov   memratoreg bl bp
+# 2
+mov   regtomemr  bl ah
+
+; AL -> mem[out_l]
+mov   memratoreg bl bp
+# 3
+mov   regtomemr  bl al
+
+pop   regtoreg   bl al
+pop   regtoreg   ah al
+pop   regtoreg   al al
+leave regtoreg   al al
+ret   immtoreg   al al
+# 4
+
+
+
 ; fn __is_less_32bit(
 ;   a_l: word, a_h: word,
 ;   b_l: word, b_h: word,
