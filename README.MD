@@ -461,5 +461,5 @@ src: |
 limit: 1000000
 input: {}
 cpu_out: [104, 101, 108, 108, 111, 44, 32, 119, 111, 114, 108, 100, 33]
-cpu_log_limit: all
+cpu_log_limit: none
 ```
