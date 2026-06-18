@@ -105,10 +105,15 @@ impl Codegen {
 
             let words = line.split_whitespace().collect::<Vec<_>>();
 
+            // Comment
+            if !words.is_empty() && words[0] == ";" {
+                continue;
+            }
+
             if words.len() >= 2 && words[0] == ":" {
                 self.set_label(&words[1].to_uppercase());
             } else if words.len() >= 2 && words[0] == "#" {
-                self.emit_word(words[1].parse::<u16>().unwrap());
+                self.emit_word(words[1].parse::<i32>().unwrap() as u16);
             } else if words.len() >= 2 && words[0] == "@" {
                 self.emit_label(&words[1].to_uppercase());
             } else if words.len() >= 4 {
@@ -156,28 +161,29 @@ impl Codegen {
                 }
 
                 ASTNode::Variable { name, vtype } => {
-                    var_map.insert(name, *stack_size);
-
-                    match &vtype {
+                    let off = match &vtype {
                         VarType::Word => {
                             // Init var on stack with 0
                             let bp_off = 0u16.overflowing_sub(*stack_size + 1);
                             self.emit_instr(Mov, ImmToMemra, BP, BP);
                             self.emit_word(bp_off.0);
                             self.emit_word(0);
+                            *stack_size
                         }
 
-                        VarType::Array(_) => {
-                            let bp_off = 0u16.overflowing_sub(*stack_size + 1);
+                        VarType::Array(s) => {
+                            let bp_off = 0u16.overflowing_sub(*stack_size + s + 1);
                             self.emit_instr(Mov, RegToMemra, BP, BP);
                             self.emit_word(bp_off.0);
-                            let bp_data_off = 0u16.overflowing_sub(*stack_size + 2);
+                            let bp_data_off = 0u16.overflowing_sub(*stack_size + s);
                             self.emit_instr(Sub, ImmToMemra, BP, BP);
                             self.emit_word(bp_off.0);
                             self.emit_word(bp_data_off.0);
+                            *stack_size + s
                         }
-                    }
+                    };
 
+                    var_map.insert(name, off);
                     *stack_size += vtype.get_size_in_words();
                 }
 

@@ -82,24 +82,46 @@ pub struct ControlUnit {
     // Registers
     interruption_flag: Register<bool>,
     interruption_block: Register<bool>,
+
+    debug: bool,
 }
 
 impl ControlUnit {
-    pub fn new() -> Self {
+    pub fn new(debug: bool) -> Self {
         Self {
             state: CUState::InstructionFetch,
             step_counter: 0,
             interruption_flag: Register::new(),
             interruption_block: Register::new(),
             is_halted: false,
+            debug,
         }
     }
 
     pub fn tick(&mut self, dp: &data_path::DataPath) -> ControlSignals {
-        println!("State: {:?}", self.state);
-        println!("Step:  {:?}", self.step_counter);
-        println!("IF:  {:?}", self.interruption_flag.get());
-        println!("IB:  {:?}", self.interruption_block.get());
+        if self.debug {
+            println!("\tState: {:?} ({})", self.state, self.step_counter);
+
+            let ir = dp.get_instruction_register();
+            let di = DecodedInstruction::from_raw(ir);
+
+            println!(
+                "\t{:<6}  {:<10}  {:<2}  {:<2}",
+                di.opcode,
+                di.mode,
+                format!("{:?}", di.rd),
+                format!("{:?}", di.rs),
+            );
+
+            println!("\tIR:  0x{:<4x}", ir,);
+
+            println!(
+                "\tIF:  {:<5}    IB:  {:<5}    IRQ: {:<5}",
+                self.interruption_flag.get(),
+                self.interruption_block.get(),
+                dp.get_io_irq(),
+            );
+        }
 
         let (cu_signals, new_state) = match self.state {
             CUState::InstructionFetch => match self.step_counter {
@@ -284,9 +306,6 @@ impl ControlUnit {
     fn tick_exec_state(&mut self, dp: &data_path::DataPath) -> (ControlSignals, bool) {
         let ir = dp.get_instruction_register();
         let di = DecodedInstruction::from_raw(ir);
-
-        println!("IR: {}", ir);
-        println!("DI: {:#?}", di);
 
         match (di.opcode, di.mode) {
             (isa::Opcode::Nop, isa::Mode::RegToReg) => (
@@ -532,7 +551,7 @@ impl ControlUnit {
                 1 => (Self::op_inc_sp(), false),
                 2 => (
                     // Mem[SP] -> MDR
-                    // SP - #n (MDR) -> SP  ; Pop args
+                    // SP + #n (MDR) -> SP  ; Pop args
                     ControlSignals {
                         rf_read_a: data_path::GeneralPurposeRegister::SP,
                         alu_src_a: AluSrcA::RegisterA,
@@ -708,6 +727,7 @@ impl ControlUnit {
 
                     (
                         ControlSignals {
+                            alu_src_a: AluSrcA::Mdr,
                             alu_operation: AluOperation::LoadFlagsLeft,
                             alu_flags_write_enable: true,
                             ..Default::default()
@@ -1179,7 +1199,8 @@ struct DecodedInstruction {
 impl DecodedInstruction {
     pub fn from_raw(raw: u16) -> Self {
         Self {
-            opcode: isa::Opcode::from_raw((raw >> 10) as u8).expect("Unexpected opcode!"),
+            opcode: isa::Opcode::from_raw((raw >> 10) as u8)
+                .unwrap_or_else(|| panic!("Unexpected opcode {} ({})!", raw >> 10, raw)),
             mode: isa::Mode::from_raw(((raw >> 6) & 0b1111) as u8).expect("Unexpected mode!"),
             rd: Self::raw_isa_reg_to_alu_reg(((raw >> 3) & 0b111) as u8),
             rs: Self::raw_isa_reg_to_alu_reg(((raw) & 0b111) as u8),

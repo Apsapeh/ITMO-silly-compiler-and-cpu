@@ -1,0 +1,28 @@
+! Interruption handler (it must be in each program)
+PROCEDURE IO_ISR
+  VARIABLE IN_ADDR
+  IN_ADDR = 128
+  VARIABLE IN
+  IN = [0]IN_ADDR ! Load IO input from mem[128]
+
+  ! Forward input to output until 0
+  IF IN EQ 0
+    NEED_EXIT = 1
+  ELSE
+    CALL WRITE IN
+  
+! Write word to mem[129]
+PROCEDURE WRITE CHAR
+  VARIABLE OUT_ADDR
+  OUT_ADDR = 129
+  [0]OUT_ADDR = CHAR
+
+
+VARIABLE NEED_EXIT
+
+! Entry point (it must be in each program)
+PROCEDURE MAIN
+  ! Await input
+  LOOP
+    IF NEED_EXIT EQ 1
+      STOP

@@ -1,0 +1,52 @@
+! Interruption handler, jush flush value
+PROCEDURE IO_ISR
+  VARIABLE IN_ADDR
+  IN_ADDR = 128
+  VARIABLE IN
+  IN = [0]IN_ADDR ! Load IO input from mem[128]
+
+  ! Fill input array (null-terminated for simplicity)
+  IF IN EQ 0
+    INPUT_IS_READY = 1
+  ELSE
+    [INPUT_SIZE]INPUT = IN
+    [INPUT_SIZE ADD 1]INPUT = 0
+    INPUT_SIZE = input_size add 1
+  
+
+! Write word to mem[129]
+PROCEDURE WRITE CHAR
+  VARIABLE OUT_ADDR
+  OUT_ADDR = 129
+  [0]OUT_ADDR = CHAR
+
+
+! Write whole string (null-terminated)
+PROCEDURE WRITE_STR STR
+  LOOP
+    IF [0]STR EQ 0
+      STOP
+      
+    CALL WRITE [0]STR
+    STR = STR ADD 1
+
+
+! Some global variables
+VARIABLE INPUT_IS_READY 
+ARRAY INPUT 80
+VARIABLE INPUT_SIZE
+
+
+! Entry point (it must be in each program)
+PROCEDURE MAIN
+  CALL WRITE_STR "What is your name?"
+
+  ! Await until user input his name
+  LOOP
+    IF INPUT_IS_READY EQ 1
+      STOP
+
+  CALL WRITE_STR "Hello, "
+  CALL WRITE_STR INPUT
+  CALL WRITE_STR "!"
+  

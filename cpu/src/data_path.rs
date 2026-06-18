@@ -4,7 +4,7 @@ use crate::general::*;
 
 const IO_READ: u16 = 0x80;
 const IO_WRITE: u16 = 0x81;
-pub const IO_IRQ_ADDR: u16 = 0x10;
+pub const IO_IRQ_ADDR: u16 = 0x40;
 
 #[derive(Clone, Copy, Default, Debug)]
 pub enum AluOperation {
@@ -26,8 +26,6 @@ pub enum AluOperation {
     Not,
     ShiftR,
     ShiftL,
-    Cmp,
-    Test,
     PassFlags,
     LoadFlagsLeft,
 }
@@ -73,10 +71,12 @@ pub struct DataPath {
     mar_register: Register<u16>,
     mdr_register: Register<u16>,
     tmp_register: Register<u16>,
+
+    debug: bool,
 }
 
 impl DataPath {
-    pub fn new(memory: [u16; 0x10000]) -> Self {
+    pub fn new(memory: [u16; 0x10000], debug: bool) -> Self {
         Self {
             memory,
             io_read_buffer: 0,
@@ -89,33 +89,48 @@ impl DataPath {
             mar_register: Default::default(),
             mdr_register: Default::default(),
             tmp_register: Default::default(),
+            debug,
         }
     }
 
     pub fn tick(&mut self, cu_signals: control_unit::ControlSignals) {
-        if true {
-            println!("Signals: {:#?}", cu_signals);
-            println!("IP:  {}", self.instruction_pointer.get());
-            println!("MAR: {}", self.mar_register.get());
-            println!("MDR: {}", self.mdr_register.get());
-            println!("TMP: {}", self.tmp_register.get());
+        if self.debug {
+            // println!("Signals: {:#?}", cu_signals);
+
             println!(
-                "AL: {}, AH: {}\nBL: {}, BH: {}\n SP:  {}",
+                "\tIP:  0x{:<4x}   MAR: 0x{:<4x}\n\tMDR: 0x{:<4x}   TMP: 0x{:<4x}",
+                self.instruction_pointer.get(),
+                self.mar_register.get(),
+                self.mdr_register.get(),
+                self.tmp_register.get()
+            );
+
+            println!(
+                "\tAL:  0x{:<4x}   AH:  0x{:<4x}\n\tBL:  0x{:<4x}   BH:  0x{:<4x}\n\tCL:  0x{:<4x}   CH:  0x{:<4x}\n\tSP:  0x{:<4x}   BP:  0x{:<4x}",
                 self.register_file[GeneralPurposeRegister::AL as usize].get(),
                 self.register_file[GeneralPurposeRegister::AH as usize].get(),
                 self.register_file[GeneralPurposeRegister::BL as usize].get(),
                 self.register_file[GeneralPurposeRegister::BH as usize].get(),
+                self.register_file[GeneralPurposeRegister::CL as usize].get(),
+                self.register_file[GeneralPurposeRegister::CH as usize].get(),
                 self.register_file[GeneralPurposeRegister::SP as usize].get(),
+                self.register_file[GeneralPurposeRegister::BP as usize].get(),
             );
+
             println!(
-                "Z: {:?}, N: {:?}, C: {:?}, O: {:?}",
+                "\tZ: {:?}, N: {:?}, C: {:?}, O: {:?}",
                 self.alu_state_flags[ZF].get(),
                 self.alu_state_flags[NF].get(),
                 self.alu_state_flags[CF].get(),
                 self.alu_state_flags[OF].get()
             );
-            println!("Mem[8190]: {}", self.memory[8190]);
-            println!("Mem[8191]: {}", self.memory[8191]);
+
+            let sp = self.register_file[GeneralPurposeRegister::SP as usize].get();
+            println!(
+                "\tMem[SP..SP+10]: {:?}",
+                &self.memory[sp as usize..sp.saturating_add(10) as usize]
+            );
+            println!()
         }
 
         let gpr_read_a = self.register_file_get_register(cu_signals.rf_read_a);
@@ -211,10 +226,6 @@ impl DataPath {
 
     pub fn get_io_write_data(&self) -> Vec<u16> {
         self.io_write_data.clone()
-    }
-
-    pub fn get_memory(&self) -> [u16; 0x10000] {
-        self.memory
     }
 
     // =====> CU Wires <======
@@ -418,7 +429,7 @@ impl DataPath {
                 (res, 0)
             }
 
-            AluOperation::Not => (!left_in, 0),
+            AluOperation::Not => (!right_in, 0),
 
             AluOperation::ShiftR => {
                 let shift = (right_in % 16) as u32;
@@ -456,28 +467,6 @@ impl DataPath {
                 }
             }
 
-            AluOperation::Cmp => {
-                let (res, borrow) = left_in.overflowing_sub(right_in);
-
-                self.alu_state_flags[ZF].set(res == 0);
-                self.alu_state_flags[NF].set((res as i16) < 0);
-                self.alu_state_flags[CF].set(borrow);
-                self.alu_state_flags[OF].set((left_in & 0x8000) != (res & 0x8000));
-
-                (0, 0)
-            }
-
-            AluOperation::Test => {
-                let res = left_in & right_in;
-
-                self.alu_state_flags[ZF].set(res == 0);
-                self.alu_state_flags[NF].set((res as i16) < 0);
-                self.alu_state_flags[CF].set(false);
-                self.alu_state_flags[OF].set(false);
-
-                (0, 0)
-            }
-
             AluOperation::PassFlags => {
                 let zf: u16 = if self.alu_state_flags[ZF].get() { 1 } else { 0 };
                 let nf: u16 = if self.alu_state_flags[NF].get() { 1 } else { 0 };
@@ -491,7 +480,7 @@ impl DataPath {
                 self.alu_state_flags[ZF].set(left_in >> 3 == 1);
                 self.alu_state_flags[NF].set((left_in >> 2) & 0b1 == 1);
                 self.alu_state_flags[CF].set((left_in >> 1) & 0b1 == 1);
-                self.alu_state_flags[OF].set(left_in & 0b1 == 0);
+                self.alu_state_flags[OF].set(left_in & 0b1 == 1);
                 (0, 0)
             }
         }

@@ -2,6 +2,28 @@
 ! [<N>]<T> - allocate N element of T and store pointer. If N == 0 or empty, it's just pointer
 !    = ~ > < ] [    + - * / %
 
+PROCEDURE IO_ISR
+  VARIABLE IN_ADDR
+  IN_ADDR = 128
+  IN_ADDR = [0]IN_ADDR
+
+! Write word to mem[129]
+PROCEDURE WRITE CHAR
+  VARIABLE OUT_ADDR
+  OUT_ADDR = 129
+  [0]OUT_ADDR = CHAR
+
+
+! Write whole string (null-terminated)
+PROCEDURE WRITE_STR STR
+  LOOP
+    IF [0]STR EQ 0
+      STOP
+      
+    CALL WRITE [0]STR
+    STR = STR ADD 1
+
+
 VARIABLE GLOBAL_COUNTER WORD
 
 ARRAY GLOBAL_ARRAY 10
@@ -22,19 +44,19 @@ PROCEDURE ADD A B RET_VAL
 
 
 PROCEDURE GREATER SEX NAME 
-  CALL WRITE "%s, %s %s!\n", "Hello", SEX, NAME
-  CALL WRITE "Please, write some number: "
+  ! CALL WRITE "%s, %s %s!\n", "Hello", SEX, NAME
+  ! CALL WRITE "Please, write some number: "
 
 
 PROCEDURE MAIN
   CALL GREATER "Mr.", "User"
 
+  CALL WRITE 1000 MUL 156
+  RETURN
+
   VARIABLE N
   N = 2
-
-  VARIABLE READ_OUT
-  CALL READ REF READ_OUT
-  N = N ADD [0]READ_OUT
+!
   
   ARRAY ARR 5       ! WORD(pointer), WORD(1), WORD(2), WORD(3), WORD(4), WORD(5)
   [0]ARR = 0

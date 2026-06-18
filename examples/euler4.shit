@@ -1,0 +1,110 @@
+! Write word to mem[129]
+PROCEDURE WRITE CHAR
+  VARIABLE OUT_ADDR
+  OUT_ADDR = 129
+  [0]OUT_ADDR = CHAR
+
+
+! Entry point (it must be in each program)
+PROCEDURE MAIN
+  ! Result
+  ARRAY    MAX_PAL 2
+  VARIABLE A
+  VARIABLE B
+
+  ! Init MAX_PAL with 0, cuz it's array
+  [0]MAX_PAL = 0
+  [1]MAX_PAL = 0
+
+  VARIABLE I
+  I = 999
+  LOOP
+    IF I EQ 99
+      STOP
+
+    VARIABLE J
+    J = 999
+    LOOP
+      IF J LT I
+        STOP
+
+      ARRAY PRODUCT 2
+      CALL __MUL_TO_32BIT I, J, PRODUCT, PRODUCT ADD 1
+
+      VARIABLE IS_LESS
+      CALL __IS_LESS_32BIT [0]PRODUCT, [1]PRODUCT, [0]MAX_PAL, [1]MAX_PAL, REF IS_LESS
+      IF IS_LESS
+        STOP
+
+      VARIABLE IS_PAL
+      CALL IS_PALINDROME [0]PRODUCT, [1]PRODUCT, REF IS_PAL
+      IF IS_PAL
+        [0]MAX_PAL = [0]PRODUCT
+        [1]MAX_PAL = [1]PRODUCT
+        A = I
+        B = J
+      
+      J = J SUB 1
+  
+    I = I SUB 1
+
+  CALL WRITE A
+  CALL WRITE B
+  CALL WRITE [0]MAX_PAL
+  CALL WRITE [1]MAX_PAL
+
+
+PROCEDURE IS_PALINDROME NUM_L NUM_H OUT
+  ARRAY DIGITS 6
+
+  ! Extract X_____
+  CALL EXTRACT_DIGIT NUM_L, NUM_H, 34464, 1, REF NUM_L, REF NUM_H, DIGITS
+
+  ! Extract _X____
+  CALL EXTRACT_DIGIT NUM_L, NUM_H, 10000, 0, REF NUM_L, REF NUM_H, DIGITS ADD 1
+
+  ! Extract __X___
+  [2]DIGITS = NUM_L DIV 1000
+  NUM_L = NUM_L MOD 1000      ! It's stupid contsruction, cuz cpu support it, but not my lang
+
+  ! Extract ___X__
+  [3]DIGITS = NUM_L DIV 100
+  NUM_L = NUM_L MOD 100
+
+  ! Extract ____X_
+  [4]DIGITS = NUM_L DIV 10
+
+  ! Extract _____X
+  [5]DIGITS = NUM_L MOD 10
+
+  ! Check is palindrome
+  IF [0]DIGITS EQ 0 ! 5-digit numbers
+    IF [1]DIGITS EQ [5]DIGITS  AND  [2]DIGITS EQ [4]DIGITS
+      [0]OUT = 1
+    ELSE
+      [0]OUT = 0
+  ELSE
+    IF [0]DIGITS EQ [5]DIGITS  AND  [1]DIGITS EQ [4]DIGITS  AND  [2]DIGITS EQ [3]DIGITS
+      [0]OUT = 1
+    ELSE
+      [0]OUT = 0
+
+
+
+PROCEDURE EXTRACT_DIGIT NUM_L NUM_H EX_L EX_H OUT_L OUT_H OUT_D
+  VARIABLE RESULT
+
+  ! Just sub 'ex' from 'num' until num greater than ex
+  ! Iteration count is an answer
+  LOOP
+    VARIABLE IS_LESS
+    CALL __IS_LESS_32BIT NUM_L, NUM_H, EX_L, EX_H, REF IS_LESS
+    IF IS_LESS EQ 1
+      STOP
+
+    CALL __SUB_32BIT NUM_L, NUM_H, EX_L, EX_H, REF NUM_L, REF NUM_H
+    RESULT = RESULT ADD 1
+
+  [0]OUT_L = NUM_L
+  [0]OUT_H = NUM_H
+  [0]OUT_D = RESULT

@@ -1,0 +1,68 @@
+! Interruption handler (it must be in each program)
+PROCEDURE IO_ISR
+  VARIABLE IN_ADDR
+  IN_ADDR = 128
+  VARIABLE IN
+  IN = [0]IN_ADDR ! Load IO input from mem[128]
+
+  ! Fill input array (null-terminated for simplicity)
+  IF IN EQ 0
+    INPUT_IS_READY = 1
+  ELSE
+    [INPUT_SIZE]INPUT = IN
+    [INPUT_SIZE ADD 1]INPUT = 0
+    INPUT_SIZE = INPUT_SIZE ADD 1
+  
+
+! Write word to mem[129]
+PROCEDURE WRITE CHAR
+  VARIABLE OUT_ADDR
+  OUT_ADDR = 129
+  [0]OUT_ADDR = CHAR
+
+
+! Write whole string (null-terminated)
+PROCEDURE WRITE_STR STR
+  LOOP
+    IF [0]STR EQ 0
+      STOP
+      
+    CALL WRITE [0]STR
+    STR = STR ADD 1
+
+
+! Some global variables
+VARIABLE INPUT_IS_READY
+ARRAY INPUT 256
+VARIABLE INPUT_SIZE
+
+! Entry point (it must be in each program)
+PROCEDURE MAIN
+  ! Await user input
+  LOOP
+    IF INPUT_IS_READY EQ 1
+      STOP
+
+  
+  ! Just bubble sort
+  VARIABLE I
+  LOOP
+    IF I GTEQ INPUT_SIZE
+      STOP
+
+    VARIABLE J
+    LOOP
+      IF J GTEQ (INPUT_SIZE SUB 1 SUB I)
+        STOP
+
+      IF [J]INPUT GT [J ADD 1]INPUT
+        VARIABLE TMP
+        TMP = [J]INPUT
+        [J]INPUT = [J ADD 1]INPUT
+        [J ADD 1]INPUT = TMP
+
+      J = J ADD 1
+
+    I = I ADD 1
+
+  CALL WRITE_STR INPUT
